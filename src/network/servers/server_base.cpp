@@ -9,3 +9,8 @@ ServerBase::ServerBase(
     u_long interface, 
     int backlog
 ) : socket(new ListeningSocket(domain, service, protocol, port, interface, backlog)) {}
+
+
+ListeningSocket* const ServerBase::get_socket() {
+    return socket;
+}
