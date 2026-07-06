@@ -20,10 +20,12 @@ endif()
 # Source files
 add_executable(server
     src/main.cpp
-    src/network/simple_socket.cpp
+    src/network/socket_base.cpp
 )
 
 # Include headers
 target_include_directories(server PRIVATE
-    include
+    src
 )
+
+# Naming conventions for networking: usually snake_case
