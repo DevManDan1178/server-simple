@@ -20,7 +20,7 @@ protected:
     
 public:
     SocketBase(int domain, int service, int protocol, int port, u_long interface);    
-      virtual ~SocketBase() = default;
+    virtual ~SocketBase() = default;
     
       /**
      * @brief Virtual function for connecting to a network
@@ -31,5 +31,5 @@ public:
 
     int get_socket_fd();
     int get_connection();
-    sockaddr_in get_adress();
+    sockaddr_in get_address();
 };

@@ -33,6 +33,6 @@ int SocketBase::get_socket_fd() {
 int SocketBase::get_connection() {
     return connection;
 }
-sockaddr_in SocketBase::get_adress() {
+sockaddr_in SocketBase::get_address() {
     return address;
 }
