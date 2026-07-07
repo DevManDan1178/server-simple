@@ -14,3 +14,9 @@ ServerBase::ServerBase(
 ListeningSocket* const ServerBase::get_socket() {
     return socket;
 }
+
+
+void ServerBase::respond(int socket_fd, std::string_view response) {
+    write(socket_fd, response.data(), response.size());
+    close(socket_fd);
+}
