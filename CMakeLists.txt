@@ -20,12 +20,16 @@ endif()
 # Source files
 add_executable(server
     src/main.cpp
+    ## NETWORK
+        # Sockets
     src/network/sockets/socket_base.cpp
     src/network/sockets/binding_socket.cpp
     src/network/sockets/connecting_socket.cpp
     src/network/sockets/listening_socket.cpp
+        # Servers
     src/network/servers/server_base.cpp
-    src/network/servers/test_server.cpp
+    src/network/servers/request_server_base.cpp
+    src/network/servers/persistent_server_base.cpp
 )
 
 # Include headers
