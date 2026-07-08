@@ -12,8 +12,8 @@ protected:
     std::unordered_set<int> clients;
     const float fixed_delta_time;
     
-    virtual void on_client_connected(int client) {};
-    virtual void on_client_disconnected(int client) {};
+    virtual void on_client_connected(int client);
+    virtual void on_client_disconnected(int client);
     virtual std::string process_client_request(int client, const sockaddr_in& socket_address, socklen_t address_size, const std::string_view request) override;
     
     virtual void update() {};

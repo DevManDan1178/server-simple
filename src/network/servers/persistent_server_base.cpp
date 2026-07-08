@@ -29,6 +29,13 @@ std::string PersistentServerBase::process_client_request(int client, const socka
     return "HTTP/1.1 200 OK\r\n\r\nPersistent server recieved:\n" + std::string(request);
 }
 
+void PersistentServerBase::on_client_connected(int client) {
+    std::cout << "Client connected: " << client << std::endl;
+}
+void PersistentServerBase::on_client_disconnected(int client) {
+    std::cout << "Client disconnected: " << client << std::endl;
+}
+
 void PersistentServerBase::launch() {
     std::vector<pollfd> file_descriptors;
     int server_socket = socket->get_socket_fd();
@@ -46,7 +53,6 @@ void PersistentServerBase::launch() {
         if (ready < 0) { 
             perror("Poll error");
         }
-
 
         for (size_t i = 0; i < file_descriptors.size(); i++) {
             pollfd& file_descriptor = file_descriptors[i];
@@ -67,27 +73,36 @@ void PersistentServerBase::launch() {
                 file_descriptors.push_back(client_poll);
                 on_client_connected(client);
             } 
+            // On clients: check for any disconnects
+            else if (file_descriptor.revents & (POLLHUP | POLLERR | POLLNVAL)) {
+                close(file_descriptor.fd);   
+                file_descriptors.erase(file_descriptors.begin() + i);
+                
+                on_client_disconnected(file_descriptor.fd);
+                --i; 
+                continue;
+            }
             // On clients: check for new data
             else if (file_descriptor.revents & POLLIN) {
                 // Existing client sent data
                 char buffer[1024];
                 int bytesRead = read(file_descriptor.fd, buffer, sizeof(buffer));
-
+                
+                // If the data sent was invalid, they disconnected
                 if (bytesRead <= 0) {
                     // Client disconnected
                     close(file_descriptor.fd);
                     file_descriptors.erase(file_descriptors.begin() + i);
                     
                     on_client_disconnected(file_descriptor.fd);
-                    i--; // because vector shifted
+                    i--; 
+                    continue;
                 }
-                else {
-                    std::string_view request(buffer, bytesRead);
-                    sockaddr_in address;
-                    socklen_t address_size = sizeof(address);
-                    std::string response = process_client_request(file_descriptor.fd, address, address_size, request);
-                    respond(file_descriptor.fd, response);
-                }
+                std::string_view request(buffer, bytesRead);
+                sockaddr_in address;
+                socklen_t address_size = sizeof(address);
+                std::string response = process_client_request(file_descriptor.fd, address, address_size, request);
+                respond(file_descriptor.fd, response);
             }
         }
     }
