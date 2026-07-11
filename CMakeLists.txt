@@ -9,6 +9,10 @@ project(Server
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Find system Boost (Asio and Beast are included in this)
+find_package(Boost REQUIRED)
 
 # Compiler warnings
 if(MSVC)
@@ -17,24 +21,19 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Source files
+# Source files (Renamed the target to 'server_app' to avoid any naming issues)
 add_executable(server
     src/main.cpp
-    ## NETWORK
-        # Sockets
-    src/network/sockets/socket_base.cpp
-    src/network/sockets/binding_socket.cpp
-    src/network/sockets/connecting_socket.cpp
-    src/network/sockets/listening_socket.cpp
-        # Servers
-    src/network/servers/server_base.cpp
-    src/network/servers/request_server_base.cpp
-    src/network/servers/persistent_server_base.cpp
 )
 
-# Include headers
+target_compile_definitions(server PRIVATE DEBUG_MODE)
+# Include project headers
 target_include_directories(server PRIVATE
     src
+    include
 )
 
-# Naming conventions for networking: usually snake_case
+# Link directly to your system Boost installation
+target_link_libraries(server PRIVATE 
+    Boost::boost
+)
