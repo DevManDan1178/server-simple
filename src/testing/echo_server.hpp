@@ -9,7 +9,7 @@ public:
 
 protected:
     // Implement the request processing logic
-    virtual boost::beast::http::response<boost::beast::http::string_body> process_client_request(boost::asio::ip::tcp::socket& socket, boost::beast::http::request<boost::beast::http::string_body> request) override {
+    virtual boost::beast::http::response<boost::beast::http::string_body> process_client_request(boost_http_request request) override {
         log_debug() << "[Server] Received: " << request << "\n";
         
         // Example logic: Turn the request into uppercase and send it back
@@ -20,7 +20,7 @@ protected:
         res.version(request.version());
         res.result(boost::beast::http::status::ok);
         res.set(boost::beast::http::field::content_type, "text/plain");
-        res.body() = "Hello World!\n"; 
+        res.body() = response; 
         res.prepare_payload();
         return res;
     }
