@@ -50,15 +50,19 @@ class persistent_server_base : public server_base {
 
     protected:
         
-        virtual void on_client_connected(boost::asio::ip::tcp::socket& socket) {
-            auto session = std::make_shared<websocket_session>(std::move(socket), incoming_packets_queue);
-            active_sessions.insert(session);
-            session->start();
+        virtual void on_client_connected(boost::asio::ip::tcp::socket&) {
             log_debug() << "[SERVER] Client connected";
         }
 
+        void setup_client_connection(boost::asio::ip::tcp::socket& socket) {
+            std::shared_ptr<websocket_session> session = std::make_shared<websocket_session>(std::move(socket), incoming_packets_queue);
+            active_sessions.insert(session);
+            session->start();
+            on_client_connected(socket);
+        }
 
-        virtual void on_client_disconnected(boost::asio::ip::tcp::socket& socket) {
+
+        virtual void on_client_disconnected(boost::asio::ip::tcp::socket&) {
             log_debug() << "[SERVER] Client disconnected";
         }
         
@@ -82,10 +86,10 @@ class persistent_server_base : public server_base {
 
 
 
-        void send(std::shared_ptr<boost::asio::ip::tcp::socket> socket, 
-            std::shared_ptr<boost::beast::flat_buffer> buffer,
-            const boost::beast::http::response<boost::beast::http::string_body>& response,
-            std::function<void()> keep_alive_func =  [](){}) { 
+        void send(std::shared_ptr<boost::asio::ip::tcp::socket>, 
+            std::shared_ptr<boost::beast::flat_buffer>,
+            const boost::beast::http::response<boost::beast::http::string_body>&,
+            std::function<void()>) { 
         }
 
         virtual void start_accept_async() override {
@@ -96,7 +100,7 @@ class persistent_server_base : public server_base {
                 [this, socket](const boost::system::error_code& ec) {
                     if (!ec) {
                         // Directly set up connection without extra handle_client function
-                        on_client_connected(*socket);
+                        setup_client_connection(*socket);
                     }
                     
                     if (is_running()) {
