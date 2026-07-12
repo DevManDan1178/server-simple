@@ -1,8 +1,7 @@
 #pragma once
-
 #include "data_structures/thread_safe_queue.hpp"
 #include <boost/beast/core.hpp>
-#include <boost/beast/websocket.hpp> // Swapped HTTP for WebSocket
+#include <boost/beast/websocket.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <memory>
 #include <iostream>
@@ -11,7 +10,6 @@
 
 constexpr const int MAX_INCOMING_QUEUE_SIZE = 10000;
 
-// A lightweight wrapper structure for the world simulation queue
 struct incoming_packet {
     std::shared_ptr<class websocket_session> session;
     std::string payload;
@@ -19,20 +17,19 @@ struct incoming_packet {
 
 class websocket_session : public std::enable_shared_from_this<websocket_session> {
     private:    
+
         boost::beast::websocket::stream<boost::asio::ip::tcp::socket> web_socket;
         boost::beast::flat_buffer flat_buffer;
         
-        // This queue feeds incoming actions into your central game loop / tick system
         thread_safe_queue<incoming_packet>& packets_queue_in;
         
-        // Outbound queue to manage concurrent async writes safely on this specific socket
         std::vector<std::string> write_queue;
 
     public:
+    
         explicit websocket_session(boost::asio::ip::tcp::socket socket, thread_safe_queue<incoming_packet>& incoming_queue)
             : web_socket(std::move(socket)), packets_queue_in(incoming_queue) {}
 
-        // Entry point: React triggers an HTTP upgrade request, we accept it
         void start() {
             auto self = shared_from_this();
             web_socket.async_accept([this, self](boost::beast::error_code ec) {
@@ -41,12 +38,10 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
                     return;
                 }
                 
-                // Connection upgraded! Start listening for player actions
                 read_message_async();
             });
         }
 
-        // Thread-safe method for your tick system/workers to push updates down to React
         void send(std::string message) {
             auto self = shared_from_this();
             boost::asio::post(web_socket.get_executor(), [this, self, msg = std::move(message)]() mutable {
@@ -60,6 +55,7 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
         }
 
     private:
+
         void read_message_async() {
             auto self = shared_from_this();
             web_socket.async_read(flat_buffer, [this, self](boost::beast::error_code ec, std::size_t bytes_transferred) {
@@ -70,7 +66,6 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
                     return; 
                 }
 
-                // Extract incoming message payload (JSON string or binary data)
                 std::string data = boost::beast::buffers_to_string(flat_buffer.data());
                 flat_buffer.consume(bytes_transferred);
 
@@ -87,14 +82,12 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
                 return;
             }
             log_debug() << "Pushing packet in connection";
-            // Push the message along with 'this' context so workers know where to send responses
             packets_queue_in.push_back({shared_from_this(), std::move(payload)});
         }
 
         void write_message_async() {
             auto self = shared_from_this();
             
-            // Set text mode (or binary mode depending on your React architecture choice)
             web_socket.text(true); 
 
             web_socket.async_write(boost::asio::buffer(write_queue.front()),
@@ -107,7 +100,6 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
 
                     write_queue.erase(write_queue.begin());
 
-                    // If more packets are waiting to go out to the broweb_socketer, keep writing
                     if (!write_queue.empty()) {
                         write_message_async();
                     }
