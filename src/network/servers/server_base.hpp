@@ -51,11 +51,15 @@ class server_base {
             });
         }
 
-        virtual void stop() {
-            asio_context.stop();
+        void join_context_thread() {
             if (context_thread.joinable()) {
                 context_thread.join();
             }
+        }
+
+        virtual void stop() {
+            asio_context.stop();
+            join_context_thread();
             log_debug() << "[SERVER] stopped \n"; 
         }
 
