@@ -26,6 +26,8 @@ add_executable(server
     src/main.cpp
 )
 
+add_subdirectory(external/json)
+target_link_libraries(server PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(server PRIVATE DEBUG_MODE)
 # Include project headers
 target_include_directories(server PRIVATE
