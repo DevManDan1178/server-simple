@@ -10,6 +10,8 @@
 
 using json = nlohmann::json;
 
+constexpr const std::size_t MAX_LEADERBOARD_SIZE = 300;
+
 constexpr const char* NAME_KEY = "name";
 constexpr const char* SCORE_KEY = "score";
 constexpr const char* TIMESTAMP_KEY = "timestamp";
@@ -22,7 +24,7 @@ struct entry {
     
     std::uint64_t id; 
 
-    typename std::multiset<entry<T>>::iterator ranking_position;
+    typename std::multiset<entry<T>, entry_comparator<T>>::iterator ranking_position;
 };
 
 
@@ -45,67 +47,67 @@ template<typename T>
 class leaderboard {
     private:
         const std::string filename;
-
+        const std::size_t max_size;
         std::uint64_t next_id = 0;
-
         std::unordered_map<std::string, entry<T>> names_to_entry;
-
         std::multiset<entry<T>, entry_comparator<T>> ranking;
 
-    private:
-        static std::string get_leaderboard_path(std::string filename) {
-            namespace fs = std::filesystem;
-            try {
-                fs::path directory = fs::current_path() / "data" / "leaderboard";
-                fs::create_directories(directory);     
-                fs::path file(filename);
-
-                if (file.extension() != ".json") {
-                    file += ".json";
-                } 
-            } catch (const fs::filesystem_error& e) {
-                throw std::runtime_error("Unable to create leaderboard directory for filename: " + filename + " - " + std::string(e.what()));
-            }
-            
-            return (directory / file).string();
-        }
 
     public:
-        explicit Leaderboard(std::string filename)
-            : filename(get_leaderboard_path(filename)) {
+        explicit leaderboard(
+            std::string filename, 
+            std::size_t max_size = MAX_LEADERBOARD_SIZE
+        ) : filename(get_leaderboard_path(filename)), max_size(max_size) {
             load();
         }
 
 
         void submit_score(const std::string& player, T score) {
-            auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            auto now = static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+
             auto it = names_to_entry.find(player);
-            
-            if (it == names_to_entry.end()) {
-                entry<T> entry{
-                    player,
-                    score,
-                    now,
-                    next_id++
-                };
 
-                auto ranking_it = ranking.insert(entry);
-                entry.ranking_position = ranking_it;
-
-                names_to_entry[player] = entry;
-            }
-            else if (score > it->second.score) {
-                // Remove old ranking entry
+            // If the player already exists
+            if (it != names_to_entry.end()) {
+                if (score <= it->second.score) {
+                    return;
+                }
+                
                 ranking.erase(it->second.ranking_position);
 
-                // Update entry
                 it->second.score = score;
                 it->second.timestamp = now;
                 it->second.id = next_id++;
 
-                // Insert updated entry
                 it->second.ranking_position = ranking.insert(it->second);
+                return;
             }
+
+            // New player
+            entry<T> e{
+                player,
+                score,
+                now,
+                next_id++
+            };
+
+        
+            if (ranking.size() >= max_size) {
+                auto worst = std::prev(ranking.end());
+
+                if (!entry_comparator<T>{}(e, *worst)) {
+                    return;
+                }    
+            }
+
+            auto ranking_it = ranking.insert(e);
+            e.ranking_position = ranking_it;
+
+            names_to_entry[player] = e;
+
+            if (ranking.size() > max_size) {
+                remove_last();
+            } 
         }
 
 
@@ -230,5 +232,33 @@ class leaderboard {
             }
 
             return true;
+        }
+
+    private:
+        static std::string get_leaderboard_path(std::string filename) {
+            namespace fs = std::filesystem;
+            try {
+                fs::path directory = fs::current_path() / "data" / "leaderboard";
+                fs::create_directories(directory);     
+                fs::path file(filename);
+
+                if (file.extension() != ".json") {
+                    file += ".json";
+                } 
+            } catch (const fs::filesystem_error& e) {
+                throw std::runtime_error("Unable to create leaderboard directory for filename: " + filename + " - " + std::string(e.what()));
+            }
+            
+            return (directory / file).string();
+        }
+
+        void remove_last() {
+            if (ranking.empty()) {
+                return;
+            }
+            auto last = std::prev(ranking.end());
+
+            names_to_entry.erase(last->name);
+            ranking.erase(last);
         }
 };
