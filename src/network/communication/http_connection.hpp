@@ -17,6 +17,7 @@ class http_connection;
 struct request_task {
     std::shared_ptr<http_connection> connection;
     boost_http_request request;
+    std::string client_ip;
 };
 
 class http_connection : public std::enable_shared_from_this<http_connection> {
@@ -49,6 +50,11 @@ public:
         read();
     }
 
+    std::string get_client_ip() const {
+        return socket.remote_endpoint()
+            .address()
+            .to_string();
+    }
 
     void send_response(boost_http_response response) {
         auto self = shared_from_this();
@@ -91,7 +97,8 @@ private:
                 request_queue.push_back(
                     request_task{
                         self,
-                        std::move(request)
+                        std::move(request),
+                        get_client_ip()
                     }
                 );
 
