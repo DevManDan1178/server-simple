@@ -54,6 +54,10 @@ class rate_limiter {
             }
         }
 
+        rate_limiter(const rate_limiter&) = delete;
+
+        rate_limiter& operator=(const rate_limiter&) = delete;
+
         bool allow(const std::string& identifier) {
             std::lock_guard<std::mutex> lock(mutex);
 
