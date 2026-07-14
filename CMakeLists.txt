@@ -25,7 +25,7 @@ target_compile_definitions(server-simple INTERFACE
 )
 
 target_include_directories(server-simple INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 #[[  OLD CMAKELISTS.TXT (before making into submodule)
