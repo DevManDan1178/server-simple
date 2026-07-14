@@ -36,7 +36,15 @@ class rate_limiter {
             : max_tokens(max_tokens),
             refill_rate(refill_rate),
             cleanup_thread([this] { cleanup_loop(); })
-        {}
+        {
+             if (max_tokens <= 0) {
+                throw std::invalid_argument("max_tokens of rate_limiter must be positive");
+            }
+
+            if (refill_rate <= 0) {
+                throw std::invalid_argument("refill_rate of rate_limiter must be positive");
+            }
+        }
 
         ~rate_limiter() {
             stop = true;
