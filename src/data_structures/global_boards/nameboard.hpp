@@ -19,6 +19,7 @@ constexpr const char* NAMEBOARD_TIMESTAMP_KEY = "timestamp";
 class nameboard {
 private:
     const std::string filename;
+    const std::size_t max_length;
 
     std::uint64_t next_id = 0;
 
@@ -26,8 +27,8 @@ private:
     std::multiset<entry, entry_comparator> ranking;
 
 public:
-    explicit nameboard(std::string filename)
-        : filename(get_nameboard_path(std::move(filename))) {
+    explicit nameboard(std::string filename, std::size_t max_length)
+        : filename(get_nameboard_path(std::move(filename))), max_length(max_length) {
         load();
     }
 
@@ -48,6 +49,13 @@ public:
         entry.position = it;
 
         names_to_entry[name] = entry;
+
+        // Erase oldest if over max length
+        if (ranking.size() > max_length) {
+            auto oldest = ranking.begin(); 
+            names_to_entry.erase(oldest->name);
+            ranking.erase(oldest);
+        }
 
         return true;
     }
