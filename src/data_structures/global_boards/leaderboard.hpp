@@ -13,7 +13,7 @@
 
 using json = nlohmann::json;
 
-constexpr const std::size_t MAX_LEADERBOARD_SIZE = 300;
+constexpr const std::size_t DEFAULT_MAX_LEADERBOARD_SIZE = 300;
 
 constexpr const char* LEADERBOARD_NAME_KEY = "name";
 constexpr const char* LEADERBOARD_SCORE_KEY = "score";
@@ -41,7 +41,7 @@ class leaderboard {
          */
         explicit leaderboard(
             std::string filename, 
-            std::size_t max_size = MAX_LEADERBOARD_SIZE
+            std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE
         ) : filename(get_leaderboard_path(filename)), max_size(max_size) {
             load();
         }
