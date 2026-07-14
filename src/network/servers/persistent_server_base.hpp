@@ -7,7 +7,6 @@
 
 constexpr const  float DEFAULT_FIXED_DELTA_TIME = 1.0f;///60.0f;
 
-using boost_http_request = boost::beast::http::request<boost::beast::http::string_body>;
 
 // Server that does not close when the user joins
 class persistent_server_base : public server_base {
