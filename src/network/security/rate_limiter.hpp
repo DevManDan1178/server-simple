@@ -58,7 +58,10 @@ class rate_limiter {
 
         rate_limiter& operator=(const rate_limiter&) = delete;
 
-        bool allow(const std::string& identifier) {
+        bool consume(const std::string& identifier, double cost = 1.0) {
+            if (cost <= 0 || cost > max_tokens) {
+                return false;
+            }
             std::lock_guard<std::mutex> lock(mutex);
 
             auto now = std::chrono::steady_clock::now();
@@ -67,7 +70,7 @@ class rate_limiter {
 
             if (it == requests.end()) {
                 requests[identifier] = {
-                    max_tokens - 1,
+                    max_tokens - cost,
                     now
                 };
 
@@ -88,11 +91,11 @@ class rate_limiter {
 
             bucket.last_refill = now;
 
-            if (bucket.tokens < 1.0) {
+            if (bucket.tokens < cost) {
                 return false;
             }
 
-            bucket.tokens -= 1.0;
+            bucket.tokens -= cost;
             return true;
         }
 
