@@ -27,4 +27,8 @@ public:
     const V& operator*() const {
         return *value;
     }
+
+    explicit operator bool() const {
+    return value != nullptr;
+}
 };
