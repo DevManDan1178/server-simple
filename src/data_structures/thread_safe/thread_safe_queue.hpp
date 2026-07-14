@@ -6,6 +6,11 @@
 #include <stdexcept>
 #include <utility>
 
+/**
+ * @brief Thread-safe queue supporting concurrent access.
+ *
+ * @tparam T Type of elements stored in the queue.
+ */
 template<typename T>
 class thread_safe_queue {
 protected:
@@ -15,14 +20,30 @@ protected:
     bool stopped = false;
 
 public:
+
+    /**
+     * @brief Creates an empty queue.
+     */
+
     thread_safe_queue() = default;
 
+    /**
+     * @brief Prevents copying of the queue.
+     */
     thread_safe_queue(const thread_safe_queue<T>&) = delete;
 
+     /**
+     * @brief Stops the queue on destruction.
+     */
     virtual ~thread_safe_queue() {
         stop();
     }
 
+    /**
+     * @brief Gets the first element.
+     * @return Front element.
+     * @throws std::runtime_error If the queue is empty.
+     */
     T front() {
         std::scoped_lock lock(mutex_queue);
 
@@ -33,6 +54,11 @@ public:
         return dequeue.front();
     }
 
+    /**
+     * @brief Gets the last element.
+     * @return Back element.
+     * @throws std::runtime_error If the queue is empty.
+     */
     T back() {
         std::scoped_lock lock(mutex_queue);
 
@@ -43,6 +69,10 @@ public:
         return dequeue.back();
     }
 
+    /**
+     * @brief Adds an element to the back.
+     * @param item Element to add.
+     */
     void push_back(const T& item) {
         {
             std::scoped_lock lock(mutex_queue);
@@ -52,6 +82,10 @@ public:
         waiting.notify_one();
     }
 
+    /**
+     * @brief Adds an element to the back.
+     * @param item Element to move into the queue.
+     */
     void push_back(T&& item) {
         {
             std::scoped_lock lock(mutex_queue);
@@ -61,6 +95,10 @@ public:
         waiting.notify_one();
     }
 
+    /**
+     * @brief Adds an element to the front.
+     * @param item Element to add.
+     */
     void push_front(const T& item) {
         {
             std::scoped_lock lock(mutex_queue);
@@ -70,6 +108,11 @@ public:
         waiting.notify_one();
     }
 
+    
+     /**
+     * @brief Adds an element to the front.
+     * @param item Element to move into the queue.
+     */
     void push_front(T&& item) {
         {
             std::scoped_lock lock(mutex_queue);
@@ -79,6 +122,11 @@ public:
         waiting.notify_one();
     }
 
+
+    /**
+     * @brief Checks whether the queue is empty.
+     * @return True if empty.
+     */
     bool empty() {
         std::scoped_lock lock(mutex_queue);
         return dequeue.empty();
@@ -94,6 +142,11 @@ public:
         dequeue.clear();
     }
 
+    /**
+     * @brief Removes and returns the first element.
+     * @return Removed element.
+     * @throws std::runtime_error If the queue is empty.
+     */
     T pop_front() {
         std::scoped_lock lock(mutex_queue);
 
@@ -107,6 +160,11 @@ public:
         return item;
     }
 
+     /**
+     * @brief Removes and returns the last element.
+     * @return Removed element.
+     * @throws std::runtime_error If the queue is empty.
+     */
     T pop_back() {
         std::scoped_lock lock(mutex_queue);
 
@@ -121,7 +179,10 @@ public:
     }
 
     /**
-     * Blocks until an item is available or the queue is stopped.
+     * @brief Waits until an element is available.
+     *
+     * @return Next element in the queue.
+     * @throws std::runtime_error If the queue is stopped.
      */
     T wait_and_pop() {
         std::unique_lock<std::mutex> lock(mutex_queue);
@@ -141,7 +202,7 @@ public:
     }
 
     /**
-     * @brief Wakes up all waiting threads and prevents further waiting.
+     * @brief Stops the queue and wakes waiting threads.
      */
     void stop() {
         {
