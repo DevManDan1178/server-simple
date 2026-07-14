@@ -26,7 +26,6 @@ struct entry_comparator {
 
 inline void to_json(nlohmann::json& j, const entry& e)
 {
-    log_debug() << "entry serializer";
     j = {
         {"name", e.name},
         {"timestamp", e.timestamp},
@@ -53,7 +52,6 @@ struct leaderboard_entry : entry {
 template<typename T>
 inline void to_json(nlohmann::json& j, const leaderboard_entry<T>& e)
 {
-    log_debug() << "leaderboard entry serializer";
     j = {
         {"name", e.name},
         {"timestamp", e.timestamp},
