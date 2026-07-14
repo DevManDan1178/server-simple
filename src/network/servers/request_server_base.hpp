@@ -62,14 +62,13 @@ class request_server_base : public server_base {
 
 
 
-        virtual boost_http_response process_client_request(boost_http_request request) = 0;
+        virtual boost_http_response process_client_request(const boost_http_request request) = 0;
 
     private:
 
 
         void worker_loop(){
             while(true){
-
                 auto task = request_queue.wait_and_pop();
                 auto response = process_client_request(std::move(task.request));
                 task.connection->send_response(std::move(response));
