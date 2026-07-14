@@ -1,4 +1,5 @@
 #pragma once
+#include "storage/file_helper.hpp"
 #include "data_structures/global_boards/entry.hpp"
 #include <algorithm>
 #include <fstream>
@@ -19,7 +20,7 @@ constexpr const size_t DEFAULT_MAX_NAMEBOARD_SIZE = 10000;
 constexpr const char* NAMEBOARD_NAME_KEY = "name";
 constexpr const char* NAMEBOARD_TIMESTAMP_KEY = "timestamp";
 
-
+constexpr const std::string NAMEBOARDS_SUBDIRECTORY_NAME = "nameboards";
 /**
  * @class nameboard
  * @brief Stores and ranks unique names with optional persistence.
@@ -44,7 +45,7 @@ class nameboard {
         explicit nameboard(const std::filesystem::path& parent_directory, 
             std::string filename, 
             std::size_t max_size = DEFAULT_MAX_NAMEBOARD_SIZE
-        ) : max_size(max_size), filename(get_nameboard_path(parent_directory, std::move(filename))) {
+        ) : max_size(max_size), filename(file_helper::get_file_path(parent_directory, NAMEBOARDS_SUBDIRECTORY_NAME, std::move(filename))) {
             load();
         }
 
@@ -181,28 +182,6 @@ class nameboard {
 
 
     private:
-
-        /**
-         * @brief Creates the storage path for a nameboard file.
-         * @param parent_directory Base storage directory.
-         * @param filename File name.
-         * @return Full JSON file path.
-         */
-        static std::string get_nameboard_path(const std::filesystem::path& parent_directory, std::string_view filename) {
-            namespace fs = std::filesystem;
-            try {
-                fs::path directory = parent_directory / "nameboards";
-                fs::create_directories(directory);     
-                fs::path file(filename);
-
-                if (file.extension() != ".json") {
-                    file += ".json";
-                } 
-                return (directory / file).string();
-            } catch (const fs::filesystem_error& e) {
-                throw std::runtime_error("Unable to create nameboard directory for filename: " + std::string(filename) + " - " + std::string(e.what()));
-            }
-        }
 
         /**
          * @brief Loads entries from disk.

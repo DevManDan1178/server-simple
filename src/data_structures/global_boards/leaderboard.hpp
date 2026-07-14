@@ -1,5 +1,5 @@
 #pragma once
-
+#include "storage/file_helper.hpp"
 #include "data_structures/global_boards/entry.hpp"
 
 #include <optional>
@@ -19,7 +19,7 @@ constexpr const std::size_t DEFAULT_MAX_LEADERBOARD_SIZE = 300;
 constexpr const char* LEADERBOARD_NAME_KEY = "name";
 constexpr const char* LEADERBOARD_SCORE_KEY = "score";
 constexpr const char* LEADERBOARD_TIMESTAMP_KEY = "timestamp";
-
+constexpr const std::string LEADERBOARDS_SUBDIRECTORY_NAME = "leaderboards";
 /**
  * @brief Stores and manages a persistent leaderboard.
  * @tparam T Score type.
@@ -44,7 +44,7 @@ class leaderboard {
             const std::filesystem::path& parent_directory,
             std::string filename, 
             std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE
-        ) : max_size(max_size), filename(get_leaderboard_path(parent_directory, std::move(filename))) {
+        ) : max_size(max_size), filename(file_helper::get_file_path(parent_directory, LEADERBOARDS_SUBDIRECTORY_NAME, std::move(filename))) {
             load();
         }
 
@@ -272,29 +272,6 @@ class leaderboard {
         }
 
     private:
-
-        /**
-         * @brief Creates the storage path for a leaderboard file.
-         * @param parent_directory Base storage directory.
-         * @param filename File name.
-         * @return Full path to the leaderboard JSON file.
-         */
-        static std::string get_leaderboard_path(const std::filesystem::path& parent_directory, std::string_view filename) {
-            namespace fs = std::filesystem;
-            try {
-                fs::path directory = parent_directory / "leaderboards";
-                fs::create_directories(directory);     
-                fs::path file(filename);
-
-                if (file.extension() != ".json") {
-                    file += ".json";
-                } 
-                
-                return (directory / file).string();
-            } catch (const fs::filesystem_error& e) {
-                throw std::runtime_error("Unable to create leaderboard directory for filename: " + std::string(filename) + " - " + std::string(e.what()));
-            }
-        }
 
         /**
          * @brief Removes the lowest-ranked entry from the leaderboard.
