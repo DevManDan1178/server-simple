@@ -207,6 +207,9 @@ public:
     void stop() {
         {
             std::scoped_lock lock(mutex_queue);
+            if (stopped) {
+                return;
+            }
             stopped = true;
         }
 
