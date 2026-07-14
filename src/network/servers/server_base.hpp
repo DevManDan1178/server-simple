@@ -1,7 +1,7 @@
 #pragma once
 
 #include "logger.hpp"
-#include "data_structures/thread_safe_queue.hpp"
+#include "data_structures/thread_safe/thread_safe_queue.hpp"
 #include "network/communication/websocket_connection.hpp"
 #include <thread>
 #include <string_view>

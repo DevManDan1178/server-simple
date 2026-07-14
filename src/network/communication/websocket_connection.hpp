@@ -1,5 +1,5 @@
 #pragma once
-#include "data_structures/thread_safe_queue.hpp"
+#include "data_structures/thread_safe/thread_safe_queue.hpp"
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/asio/ip/tcp.hpp>

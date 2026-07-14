@@ -1,5 +1,5 @@
 #pragma once
-#include "data_structures/thread_safe_queue.hpp"
+#include "data_structures/thread_safe/thread_safe_queue.hpp"
 #include <boost/beast.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/asio.hpp>
