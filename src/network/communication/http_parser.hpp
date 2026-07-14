@@ -86,12 +86,12 @@ namespace http_parser {
     }
 
     /**
-     * @brief sets response to 404 Not Found 
+     * @brief sets response to not found in and response body in text plain
      */
-    void set_response_not_found(boost_http_response& response) {
+    void set_response_not_found(boost_http_response& response, const std::string& response_text = "404 Not Found") {
         response.set(boost::beast::http::field::content_type, "text/plain");
         response.result(boost::beast::http::status::not_found);
-        response.body() = "404 Not Found";
+        response.body() = response_text;
     }
 
     /**
@@ -100,5 +100,23 @@ namespace http_parser {
     void set_response_json(boost_http_response& response, json j) {
         response.set(boost::beast::http::field::content_type, "application/json");
         response.body() = j.dump();
+    }
+
+    /**
+     * @brief sets the response to status unauthorized with response body in text plain
+     */
+    void set_response_unauthorized(boost_http_response& response, const std::string& response_text) {
+        response.result(boost::beast::http::status::unauthorized);
+        response.set(boost::beast::http::field::content_type, "text/plain");
+        response.body() = response_text;
+    }
+
+    /**
+     * @brief sets the response to status too many requests with response body in text plain
+     */
+    void set_response_rate_limited(boost_http_response& response, const std::string& response_text = "Rate limit exceeded") {
+        response.result(boost::beast::http::status::too_many_requests);
+        response.set(boost::beast::http::field::content_type, "text/plain");
+        response.body() = response_text;
     }
 }
