@@ -63,7 +63,7 @@ public:
         auto iterator = map.find(key);
 
         if (iterator == map.end()) {
-            throw std::runtime_error("Key not found");
+            throw std::runtime_error("Key not found - thread_safe_map");
         }
 
         return iterator->second;
@@ -75,7 +75,7 @@ public:
         auto iterator = map.find(key);
 
         if (iterator == map.end()) {
-            throw std::runtime_error("Key not found");
+            throw std::runtime_error("Key not found - thread_safe_map");
         }
 
         return locked_value<V>(
@@ -188,14 +188,13 @@ public:
     }
 
     template<typename... Args>
-    std::pair<std::optional<V>, bool> try_emplace(const K& key, Args&&... args) {
+    bool try_emplace(const K& key, Args&&... args) {
         std::scoped_lock lock(mutex_map);
-        auto result = map.try_emplace(key, std::forward<Args>(args)...);
 
-        return {
-            result.first->second,
-            result.second
-        };
+        return map.try_emplace(
+            key,
+            std::forward<Args>(args)...
+        ).second;
     }
 
     template<typename... Args>
