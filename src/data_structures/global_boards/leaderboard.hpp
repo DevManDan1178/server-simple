@@ -102,7 +102,7 @@ class leaderboard {
 
             names_to_entry[player] = entry;
 
-            auto placement = get_rank(ranking_it);
+            auto placement = get_index(ranking_it);
 
             if (ranking.size() > max_size) {
                 remove_last();
