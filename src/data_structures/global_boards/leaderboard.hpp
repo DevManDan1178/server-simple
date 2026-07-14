@@ -27,7 +27,7 @@ constexpr const std::string LEADERBOARDS_SUBDIRECTORY_NAME = "leaderboards";
 template<typename T>
 class leaderboard {
     private:
-        const std::string filename;
+        const std::filesystem::path file_path;
         const std::size_t max_size;
         std::uint64_t next_id = 0;
         std::unordered_map<std::string, leaderboard_entry<T>> names_to_entry;
@@ -37,14 +37,13 @@ class leaderboard {
     public:
         /**
          * @brief Creates a leaderboard and loads saved data.
-         * @param filename Leaderboard file name.
+         * @param file_path Leaderboard file name.
          * @param max_size Maximum number of entries.
          */
         explicit leaderboard(
-            const std::filesystem::path& parent_directory,
-            std::string filename, 
+            const std::filesystem::path& file_path,
             std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE
-        ) : max_size(max_size), filename(file_helper::get_file_path(parent_directory, LEADERBOARDS_SUBDIRECTORY_NAME, std::move(filename))) {
+        ) : max_size(max_size), file_path(file_path) {
             load();
         }
 
@@ -220,7 +219,7 @@ class leaderboard {
                     });
                 }
 
-                std::ofstream out(filename);
+                std::ofstream out(file_path);
 
                 if (!out) {
                     return false;
@@ -233,13 +232,17 @@ class leaderboard {
             return true;
         }
 
+        
+
+    private:
+
         /**
          * @brief Loads leaderboard data from disk.
          * @return True if successful.
          */
         bool load() {
             try {
-                std::ifstream in(filename);
+                std::ifstream in(file_path);
 
                 if (!in) {
                     return false;
@@ -270,8 +273,6 @@ class leaderboard {
             
             return true;
         }
-
-    private:
 
         /**
          * @brief Removes the lowest-ranked entry from the leaderboard.
