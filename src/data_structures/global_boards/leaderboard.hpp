@@ -19,7 +19,10 @@ constexpr const char* LEADERBOARD_NAME_KEY = "name";
 constexpr const char* LEADERBOARD_SCORE_KEY = "score";
 constexpr const char* LEADERBOARD_TIMESTAMP_KEY = "timestamp";
 
-
+/**
+ * @brief Stores and manages a persistent leaderboard.
+ * @tparam T Score type.
+ */
 template<typename T>
 class leaderboard {
     private:
@@ -31,6 +34,11 @@ class leaderboard {
 
 
     public:
+        /**
+         * @brief Creates a leaderboard and loads saved data.
+         * @param filename Leaderboard file name.
+         * @param max_size Maximum number of entries.
+         */
         explicit leaderboard(
             std::string filename, 
             std::size_t max_size = MAX_LEADERBOARD_SIZE
@@ -39,6 +47,11 @@ class leaderboard {
         }
 
 
+        /**
+         * @brief Adds or updates a player's score.
+         * @param player Player name.
+         * @param score Score to submit.
+         */
         void submit_score(const std::string& player, T score) {
             auto now = static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 
@@ -88,6 +101,11 @@ class leaderboard {
         }
 
 
+         /**
+         * @brief Gets the highest ranked scores.
+         * @param count Number of entries to return.
+         * @return Top leaderboard entries.
+         */
         std::vector<leaderboard_entry<T>> get_top_scores(std::size_t count) const {
             std::vector<leaderboard_entry<T>> result;
 
@@ -103,6 +121,11 @@ class leaderboard {
         }
 
 
+        /**
+         * @brief Gets the lowest ranked scores.
+         * @param count Number of entries to return.
+         * @return Bottom leaderboard entries.
+         */
         std::vector<leaderboard_entry<T>> get_bottom_scores(std::size_t count) const
         {
             std::vector<leaderboard_entry<T>> result;
@@ -118,7 +141,13 @@ class leaderboard {
             return result;
         }
 
-        std::vector<leaderboard_entry<T>> get_rank_range_from_top(std::size_t start, std::size_t end) const {
+         /**
+         * @brief Gets entries between indices ranked from the top.
+         * @param start Starting index.
+         * @param end Ending index (excluded).
+         * @return Entries in range.
+         */
+        std::vector<leaderboard_entry<T>> get_range_from_top(std::size_t start, std::size_t end) const {
             std::vector<leaderboard_entry<T>> result;
 
             if (start > end || start > ranking.size() || start == ranking.size()) {
@@ -138,8 +167,13 @@ class leaderboard {
             return result;
         }
 
-
-        std::vector<leaderboard_entry<T>> get_rank_range_from_bottom(std::size_t start, std::size_t end) const {
+         /**
+         * @brief Gets entries between indices ranked from the bottom.
+         * @param start Starting index.
+         * @param end Ending index (excluded).
+         * @return Entries in range.
+         */
+        std::vector<leaderboard_entry<T>> get_range_from_bottom(std::size_t start, std::size_t end) const {
             std::vector<leaderboard_entry<T>> result;
             if (start > end || start > ranking.size()) {
                 return result;
@@ -159,56 +193,70 @@ class leaderboard {
             return result;
         }
 
-        
+        /**
+         * @brief Saves leaderboard data to disk.
+         * @return True if successful.
+         */
         bool save() const {
-            json j = json::array();
+            try {
+                json j = json::array();
 
-            for (const auto& entry : ranking) {
-                j.push_back({
-                    {LEADERBOARD_NAME_KEY, entry.name},
-                    {LEADERBOARD_SCORE_KEY, entry.score},
-                    {LEADERBOARD_TIMESTAMP_KEY, entry.timestamp}
-                });
-            }
+                for (const auto& entry : ranking) {
+                    j.push_back({
+                        {LEADERBOARD_NAME_KEY, entry.name},
+                        {LEADERBOARD_SCORE_KEY, entry.score},
+                        {LEADERBOARD_TIMESTAMP_KEY, entry.timestamp}
+                    });
+                }
 
-            std::ofstream out(filename);
+                std::ofstream out(filename);
 
-            if (!out) {
+                if (!out) {
+                    return false;
+                }
+                    
+                out << j.dump(4);  
+            } catch (...) {  
                 return false;
             }
-                
-
-            out << j.dump(4);
             return true;
         }
 
-
+        /**
+         * @brief Loads leaderboard data from disk.
+         * @return True if successful.
+         */
         bool load() {
-            std::ifstream in(filename);
+            try {
+                std::ifstream in(filename);
 
-            if (!in) {
+                if (!in) {
+                    return false;
+                }
+                    
+                json j;
+                in >> j;
+
+                names_to_entry.clear();
+                ranking.clear();
+
+                for (const auto& item : j) {
+                    leaderboard_entry<T> e;
+                    e.name = item.at(LEADERBOARD_NAME_KEY).get<std::string>(),
+                    e.score = item.at(LEADERBOARD_SCORE_KEY).get<T>(),
+                    e.timestamp =item.at(LEADERBOARD_TIMESTAMP_KEY).get<std::int64_t>(),
+                    e.id = next_id++;
+                    
+                    auto ranking_it = ranking.insert(e);
+                    e.ranking_position = ranking_it;
+
+                    names_to_entry[e.name] = e;
+                }
+                
+            } catch (...) {
                 return false;
             }
-                
-            json j;
-            in >> j;
-
-            names_to_entry.clear();
-            ranking.clear();
-
-            for (const auto& item : j) {
-                leaderboard_entry<T> e;
-                e.name = item.at(LEADERBOARD_NAME_KEY).get<std::string>(),
-                e.score = item.at(LEADERBOARD_SCORE_KEY).get<T>(),
-                e.timestamp =item.at(LEADERBOARD_TIMESTAMP_KEY).get<std::int64_t>(),
-                e.id = next_id++;
-                
-                auto ranking_it = ranking.insert(e);
-                e.ranking_position = ranking_it;
-
-                names_to_entry[e.name] = e;
-            }
-
+            
             return true;
         }
 
