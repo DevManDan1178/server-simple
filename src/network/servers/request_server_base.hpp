@@ -36,9 +36,11 @@ class request_server_base : public server_base {
 
 
 
-        virtual ~request_server_base() {
-            for(auto& t : workers) {
-                if(t.joinable()) {
+        virtual ~request_server_base() {   
+            request_queue.stop();
+            
+            for(auto& t : workers) {    
+                if (t.joinable()) {
                     t.join();
                 }   
             }
@@ -85,10 +87,19 @@ class request_server_base : public server_base {
 
         void worker_loop(){
             while(true){
-                auto task = request_queue.wait_and_pop();
-                
-                auto response = process_client_request(std::move(task.client_ip), std::move(task.request));
-                task.connection->send_response(std::move(response));
+               try {
+                    auto task = request_queue.wait_and_pop();
+
+                    auto response = process_client_request(
+                        std::move(task.client_ip),
+                        std::move(task.request)
+                    );
+
+                    task.connection->send_response(std::move(response));
+                }
+                catch(const std::runtime_error& e) {
+                    break;
+                }
             }
         }
 
