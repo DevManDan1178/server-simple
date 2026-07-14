@@ -32,18 +32,18 @@ class rate_limiter {
         }
 
     public:
-        rate_limiter(double max_tokens, double refill_rate)
-            : max_tokens(max_tokens),
-            refill_rate(refill_rate),
-            cleanup_thread([this] { cleanup_loop(); })
-        {
-             if (max_tokens <= 0) {
+        rate_limiter(double max_tokens, double refill_rate) : max_tokens(max_tokens), refill_rate(refill_rate) {
+            if (max_tokens <= 0) {
                 throw std::invalid_argument("max_tokens of rate_limiter must be positive");
             }
 
             if (refill_rate <= 0) {
                 throw std::invalid_argument("refill_rate of rate_limiter must be positive");
             }
+
+            cleanup_thread = std::thread(
+                [this] { cleanup_loop(); }
+            );
         }
 
         ~rate_limiter() {
