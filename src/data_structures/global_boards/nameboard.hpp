@@ -113,7 +113,7 @@ private:
     static std::string get_nameboard_path(std::string filename) {
         namespace fs = std::filesystem;
         try {
-            fs::path directory = fs::current_path() / "data" / "nameboard";
+            fs::path directory = fs::current_path() / "data" / "nameboards";
             fs::create_directories(directory);     
             fs::path file(filename);
 
