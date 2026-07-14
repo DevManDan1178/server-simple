@@ -2,6 +2,7 @@
 
 #include "data_structures/global_boards/entry.hpp"
 
+#include <optional>
 #include <chrono>
 #include <fstream>
 #include <unordered_map>
@@ -40,9 +41,10 @@ class leaderboard {
          * @param max_size Maximum number of entries.
          */
         explicit leaderboard(
+            const std::filesystem::path& parent_directory,
             std::string filename, 
             std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE
-        ) : filename(get_leaderboard_path(filename)), max_size(max_size) {
+        ) : max_size(max_size), filename(get_leaderboard_path(parent_directory, std::move(filename))) {
             load();
         }
 
@@ -51,26 +53,33 @@ class leaderboard {
          * @brief Adds or updates a player's score.
          * @param player Player name.
          * @param score Score to submit.
+         * @return (optional) position where the new score was inserted
          */
-        void submit_score(const std::string& player, T score) {
+        std::optional<std::size_t> submit_score(const std::string& player, T score) {
             auto now = static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+
+            auto get_index = [this](auto it) -> std::size_t {
+                return static_cast<std::size_t>(std::distance(ranking.begin(), it));
+            };
 
             auto it = names_to_entry.find(player);
 
-            // If the player already exists
+            // Existing player
             if (it != names_to_entry.end()) {
                 if (score <= it->second.score) {
-                    return;
+                    return std::nullopt;
                 }
-                
+
                 ranking.erase(it->second.ranking_position);
 
                 it->second.score = score;
                 it->second.timestamp = now;
                 it->second.id = next_id++;
 
-                it->second.ranking_position = ranking.insert(it->second);
-                return;
+                auto ranking_it = ranking.insert(it->second);
+                it->second.ranking_position = ranking_it;
+
+                return get_index(ranking_it);
             }
 
             // New entry
@@ -79,15 +88,13 @@ class leaderboard {
             entry.score = score;
             entry.timestamp = now;
             entry.id = next_id++;
-            
 
-        
             if (ranking.size() >= max_size) {
                 auto worst = std::prev(ranking.end());
 
                 if (!leaderboard_entry_comparator<T>{}(entry, *worst)) {
-                    return;
-                }    
+                    return std::nullopt;
+                }
             }
 
             auto ranking_it = ranking.insert(entry);
@@ -95,9 +102,13 @@ class leaderboard {
 
             names_to_entry[player] = entry;
 
+            auto placement = get_rank(ranking_it);
+
             if (ranking.size() > max_size) {
                 remove_last();
-            } 
+            }
+
+            return placement;
         }
 
 
@@ -261,10 +272,17 @@ class leaderboard {
         }
 
     private:
-        static std::string get_leaderboard_path(std::string filename) {
+
+        /**
+         * @brief Creates the storage path for a leaderboard file.
+         * @param parent_directory Base storage directory.
+         * @param filename File name.
+         * @return Full path to the leaderboard JSON file.
+         */
+        static std::string get_leaderboard_path(const std::filesystem::path& parent_directory, std::string_view filename) {
             namespace fs = std::filesystem;
             try {
-                fs::path directory = fs::current_path() / "data" / "leaderboards";
+                fs::path directory = parent_directory / "leaderboards";
                 fs::create_directories(directory);     
                 fs::path file(filename);
 
@@ -274,10 +292,15 @@ class leaderboard {
                 
                 return (directory / file).string();
             } catch (const fs::filesystem_error& e) {
-                throw std::runtime_error("Unable to create leaderboard directory for filename: " + filename + " - " + std::string(e.what()));
+                throw std::runtime_error("Unable to create leaderboard directory for filename: " + std::string(filename) + " - " + std::string(e.what()));
             }
         }
 
+        /**
+         * @brief Removes the lowest-ranked entry from the leaderboard.
+         *
+         * Does nothing if the leaderboard is empty.
+         */
         void remove_last() {
             if (ranking.empty()) {
                 return;
