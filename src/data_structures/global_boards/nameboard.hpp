@@ -13,6 +13,8 @@
 
 using json = nlohmann::json;
 
+constexpr const size_t DEFAULT_MAX_NAMEBOARD_SIZE = 10000;
+
 constexpr const char* NAMEBOARD_NAME_KEY = "name";
 constexpr const char* NAMEBOARD_TIMESTAMP_KEY = "timestamp";
 
@@ -27,7 +29,7 @@ private:
     std::multiset<entry, entry_comparator> ranking;
 
 public:
-    explicit nameboard(std::string filename, std::size_t max_length)
+    explicit nameboard(std::string filename, std::size_t max_length = DEFAULT_MAX_NAMEBOARD_SIZE)
         : filename(get_nameboard_path(std::move(filename))), max_length(max_length) {
         load();
     }
