@@ -27,7 +27,7 @@ constexpr const std::string NAMEBOARDS_SUBDIRECTORY_NAME = "nameboards";
  */
 class nameboard {
     private:
-        const std::string filename;
+        const std::filesystem::path file_path;
         const std::size_t max_size;
 
         std::uint64_t next_id = 0;
@@ -39,13 +39,13 @@ class nameboard {
         /**
          * @brief Creates a nameboard and loads existing data.
          * @param parent_directory Directory used for storage.
-         * @param filename Name of the JSON file.
+         * @param file_path Name of the JSON file.
          * @param max_size Maximum number of entries.
          */
-        explicit nameboard(const std::filesystem::path& parent_directory, 
-            std::string filename, 
+        explicit nameboard(
+            const std::filesystem::path& file_path,
             std::size_t max_size = DEFAULT_MAX_NAMEBOARD_SIZE
-        ) : max_size(max_size), filename(file_helper::get_file_path(parent_directory, NAMEBOARDS_SUBDIRECTORY_NAME, std::move(filename))) {
+        ) : max_size(max_size), file_path(file_path) {
             load();
         }
 
@@ -161,22 +161,26 @@ class nameboard {
          * @return True if saved successfully.
          */
         bool save() const {
-            json j = json::array();
+            try {
+                 json j = json::array();
 
-            for (const auto& entry : ranking) {
-                j.push_back({
-                    {NAMEBOARD_NAME_KEY, entry.name},
-                    {NAMEBOARD_TIMESTAMP_KEY, entry.timestamp}
-                });
-            }
+                for (const auto& entry : ranking) {
+                    j.push_back({
+                        {NAMEBOARD_NAME_KEY, entry.name},
+                        {NAMEBOARD_TIMESTAMP_KEY, entry.timestamp}
+                    });
+                }
 
-            std::ofstream out(filename);
+                std::ofstream out(file_path);
 
-            if (!out) {
+                if (!out) {
+                    return false;
+                }
+                    
+                out << j.dump(4);
+            } catch (...) {
                 return false;
             }
-                
-            out << j.dump(4);
             return true;
         }
 
@@ -188,32 +192,36 @@ class nameboard {
          * @return True if loaded successfully.
          */
         bool load() {
-            std::ifstream in(filename);
+            try {
+                std::ifstream in(file_path);
 
-            if (!in) {
+                if (!in) {
+                    return false;
+                }    
+
+                json j;
+                in >> j;
+
+                names_to_entry.clear();
+                ranking.clear();
+                next_id = 0;
+
+                for (const auto& item : j) {
+                    entry entry{
+                        item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
+                        item.at(NAMEBOARD_TIMESTAMP_KEY).get<std::int64_t>(),
+                        next_id++
+                    };
+
+                    auto it = ranking.insert(entry);
+                    entry.position = it;
+
+                    names_to_entry[entry.name] = entry;
+                }
+            } catch (...) {
                 return false;
-            }    
-
-            json j;
-            in >> j;
-
-            names_to_entry.clear();
-            ranking.clear();
-            next_id = 0;
-
-            for (const auto& item : j) {
-                entry entry{
-                    item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
-                    item.at(NAMEBOARD_TIMESTAMP_KEY).get<std::int64_t>(),
-                    next_id++
-                };
-
-                auto it = ranking.insert(entry);
-                entry.position = it;
-
-                names_to_entry[entry.name] = entry;
             }
-
+        
             return true;
         }
 };
