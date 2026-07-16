@@ -26,8 +26,9 @@ constexpr const char* SCORE_STREAM_SUBDIRECTORY_NAME = "score_streams";
  * @brief Stores a stream of scores.
  *
  * Names are not required to be unique.
- * New scores are appended to the end of the stream.
- *
+ * New scores are appended to the start of the stream.
+ * Can query for most recent scores
+ * 
  * @tparam T Score type.
  */
 template<typename T>
