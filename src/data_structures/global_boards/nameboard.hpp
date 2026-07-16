@@ -33,7 +33,7 @@ class nameboard {
         std::uint64_t next_id = 0;
 
         std::unordered_map<std::string, entry> names_to_entry;
-        std::multiset<entry, entry_comparator> ranking;
+        std::multiset<entry*, entry_ptr_comparator> ranking;
 
     public:
         /**
@@ -55,38 +55,40 @@ class nameboard {
          * @return Ranking position, or nullopt if the name already exists.
          */
         std::optional<std::size_t> add_name(const std::string& name) {
-            if (names_to_entry.count(name) != 0) {
+            if (names_to_entry.contains(name)) {
                 return std::nullopt;
-            } 
+            }
+                
+            auto now = static_cast<int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 
-            auto now = static_cast<std::int64_t>(
-                std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())
-            );
-
-            entry entry {
+            auto [map_it, inserted] = names_to_entry.emplace(
                 name,
-                now,
-                next_id++
-            };
+                entry{
+                    name,
+                    now,
+                    next_id++
+                });
 
-            auto it = ranking.insert(entry);
-            entry.position = it;
+            entry& e = map_it->second;
 
-            names_to_entry[name] = entry;
+            auto rank_it = ranking.insert(&e);
+            e.position = rank_it;
 
-            auto index = static_cast<std::size_t>(
-                std::distance(ranking.begin(), it)
-            );
+            auto index = static_cast<size_t>(std::distance(ranking.begin(), rank_it));
 
-            // Erase oldest if over max length
             if (ranking.size() > max_size) {
-                auto oldest = ranking.begin(); 
-                names_to_entry.erase(oldest->name);
-                ranking.erase(oldest);
+                auto oldest = ranking.begin();
+                entry* oldest_entry = *oldest;
 
-                if (it == oldest) {
+                if (oldest == rank_it)
+                {
+                    ranking.erase(oldest);
+                    names_to_entry.erase(name);
                     return std::nullopt;
                 }
+
+                ranking.erase(oldest);
+                names_to_entry.erase(oldest_entry->name);
             }
 
             return index;
@@ -126,18 +128,50 @@ class nameboard {
          * @return All stored entries.
          */
         std::vector<entry> get_all() const {
-            return {ranking.begin(), ranking.end()};
+            std::vector<entry> result;
+            result.reserve(ranking.size());
+
+            for (auto e : ranking)
+                result.push_back(*e);
+
+            return result;
         }
         
 
-         /**
+        /**
          * @brief Gets the first ranked entries.
          * @param amount Number of entries to retrieve.
          * @return Ranked entries.
          */
         std::vector<entry> get_from_first(size_t amount) const {
+            std::vector<entry> result;
+            result.reserve(std::min(amount, ranking.size()));
+
             auto end = std::next(ranking.begin(), std::min(amount, ranking.size()));
-            return {ranking.begin(), end};
+
+            for (auto it = ranking.begin(); it != end; ++it) {
+                result.push_back(**it);
+            }
+                
+            return result;
+        }
+
+        /**
+         * @brief Gets the last ranked entries.
+         * @param amount Number of entries to retrieve.
+         * @return Ranked entries, last to first.
+         */
+        std::vector<entry> get_from_last(size_t amount) const {
+            std::vector<entry> result;
+            result.reserve(std::min(amount, ranking.size()));
+
+            auto end = std::next(ranking.rbegin(), std::min(amount, ranking.size()));
+
+            for (auto it = ranking.rbegin(); it != end; ++it) {
+                result.push_back(**it);
+            }
+
+            return result;
         }
 
         /**
@@ -146,14 +180,47 @@ class nameboard {
          * @param end Ending index (exclusive).
          * @return Entries in the specified range.
          */
-        std::vector<entry> get_in_bounds(size_t start, size_t end) const {
-            if (start > ranking.size() || start > end || start == ranking.size()) {
+        std::vector<entry> get_in_range_from_top(size_t start, size_t end) const {
+            if (start >= ranking.size() || start > end) {
+                return {};
+            }   
+
+            auto first = std::next(ranking.begin(), start);
+            auto last  = std::next(ranking.begin(), std::min(end, ranking.size()));
+
+            std::vector<entry> result;
+            result.reserve(std::distance(first, last));
+
+            for (auto it = first; it != last; ++it) {
+                result.push_back(**it);
+            }
+
+            return result;
+        }
+
+
+        /**
+         * @brief Gets entries in a ranking range counted from the bottom.
+         * @param start Starting index from the bottom.
+         * @param end Ending index from the bottom (exclusive).
+         * @return Entries in the specified range, bottom to top.
+         */
+        std::vector<entry> get_in_range_from_bottom(size_t start, size_t end) const {
+            if (start >= ranking.size() || start > end) {
                 return {};
             }
 
-            auto start_it = std::next(ranking.begin(), start);
-            auto end_it = std::next(ranking.begin(), std::min(end, ranking.size()));
-            return {start_it, end_it};
+            auto first = std::next(ranking.rbegin(), start);
+            auto last  = std::next(ranking.rbegin(), std::min(end, ranking.size()));
+
+            std::vector<entry> result;
+            result.reserve(std::distance(first, last));
+
+            for (auto it = first; it != last; ++it) {
+                result.push_back(**it);
+            }
+
+            return result;
         }
 
          /**
@@ -164,10 +231,10 @@ class nameboard {
             try {
                  json j = json::array();
 
-                for (const auto& entry : ranking) {
+                for (const auto* e : ranking) {
                     j.push_back({
-                        {NAMEBOARD_NAME_KEY, entry.name},
-                        {NAMEBOARD_TIMESTAMP_KEY, entry.timestamp}
+                        {NAMEBOARD_NAME_KEY, e->name},
+                        {NAMEBOARD_TIMESTAMP_KEY, e->timestamp}
                     });
                 }
 
@@ -207,16 +274,18 @@ class nameboard {
                 next_id = 0;
 
                 for (const auto& item : j) {
-                    entry entry{
+                    auto [map_it, inserted] = names_to_entry.emplace(
                         item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
-                        item.at(NAMEBOARD_TIMESTAMP_KEY).get<std::int64_t>(),
-                        next_id++
-                    };
+                        entry{
+                            item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
+                            item.at(NAMEBOARD_TIMESTAMP_KEY).get<int64_t>(),
+                            next_id++
+                        });
 
-                    auto it = ranking.insert(entry);
-                    entry.position = it;
+                    entry& e = map_it->second;
 
-                    names_to_entry[entry.name] = entry;
+                    auto rank_it = ranking.insert(&e);
+                    e.position = rank_it;
                 }
             } catch (...) {
                 return false;
