@@ -78,3 +78,31 @@ struct leaderboard_entry_comparator : entry_comparator {
         return entry_comparator::operator()(a, b);
     }
 };
+
+template<typename T>
+struct scoreboard_entry : entry {
+    T score;
+
+    // Not serialized
+    typename std::multiset<scoreboard_entry<T>, entry_comparator>::iterator position;
+};
+
+
+template<typename T>
+inline void to_json(nlohmann::json& j, const scoreboard_entry<T>& e)
+{
+    j = {
+        {"name", e.name},
+        {"timestamp", e.timestamp},
+        {"score", e.score}
+    };
+}
+
+
+template<typename T>
+inline void from_json(const nlohmann::json& j, scoreboard_entry<T>& e)
+{
+    j.at("name").get_to(e.name);
+    j.at("timestamp").get_to(e.timestamp);
+    j.at("score").get_to(e.score);
+}
