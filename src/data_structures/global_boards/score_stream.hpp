@@ -113,9 +113,9 @@ class score_stream {
 
 
         /**
-         * @brief Gets entries in range from the start.
+         * @brief Gets entries in range from the start (newest).
          */
-        std::vector<score_stream_entry<T>> get_in_bounds(std::size_t start, std::size_t end) const {
+        std::vector<score_stream_entry<T>> get_in_range_from_top(std::size_t start, std::size_t end) const {
             auto all = entries.to_vector();
 
             if (start >= all.size() || start >= end) {
@@ -132,7 +132,33 @@ class score_stream {
             };
         }
 
+        /**
+         * @brief Gets entries in range from the bottom (oldest).
+         */
+        std::vector<score_stream_entry<T>> get_in_range_from_bottom(
+            std::size_t start,
+            std::size_t end
+        ) const {
+            auto all = entries.to_vector();
 
+            if (start >= all.size() || start >= end) {
+                return {};
+            }
+
+            end = std::min(end, all.size());
+
+            std::vector<score_stream_entry<T>> result;
+            result.reserve(end - start);
+
+            // Convert bottom index to top index.
+            auto bottom_start = all.size() - end;
+            auto bottom_end = all.size() - start;
+
+            return {
+                all.begin() + bottom_start,
+                all.begin() + bottom_end
+            };
+        }
 
         /**
          * @brief Saves score stream data.
