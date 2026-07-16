@@ -5,13 +5,20 @@
 #include <set>
 #include <nlohmann/json.hpp>
 
+
+
+struct entry;
+
+struct entry_ptr_comparator {
+    bool operator()(const entry* a, const entry* b) const;
+};
+
 struct entry {
     std::string name;
     int64_t timestamp;
     uint64_t id;
 
-    // Not serialized
-    std::multiset<entry>::iterator position;
+    std::multiset<entry*, entry_ptr_comparator>::iterator position;
 };
 
 struct entry_comparator {
@@ -24,11 +31,22 @@ struct entry_comparator {
     }
 };
 
+inline bool entry_ptr_comparator::operator()(const entry* a, const entry* b) const
+{
+    if (a->timestamp != b->timestamp)
+        return a->timestamp < b->timestamp;
+
+    return a->id < b->id;
+}
+
+
 template<typename T>
 struct leaderboard_entry;
 
 template<typename T>
-struct leaderboard_entry_ptr_comparator;
+struct leaderboard_entry_ptr_comparator {
+    bool operator()(const leaderboard_entry<T>* a, const leaderboard_entry<T>* b) const;
+};
 
 
 template<typename T>
@@ -43,10 +61,8 @@ struct leaderboard_entry_comparator : entry_comparator {
 
 
 template<typename T>
-struct leaderboard_entry_ptr_comparator{
-    bool operator()(const leaderboard_entry<T>* a, const leaderboard_entry<T>* b) const {
-        return leaderboard_entry_comparator<T>{}(*a, *b);
-    }
+inline bool leaderboard_entry_ptr_comparator<T>::operator()(const leaderboard_entry<T>* a, const leaderboard_entry<T>* b) const {
+    return leaderboard_entry_comparator<T>{}(*a, *b);
 };
 
 
