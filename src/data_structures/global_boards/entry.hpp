@@ -80,16 +80,13 @@ struct leaderboard_entry_comparator : entry_comparator {
 };
 
 template<typename T>
-struct scoreboard_entry : entry {
+struct score_stream_entry : entry {
     T score;
-
-    // Not serialized
-    typename std::multiset<scoreboard_entry<T>, entry_comparator>::iterator position;
 };
 
 
 template<typename T>
-inline void to_json(nlohmann::json& j, const scoreboard_entry<T>& e)
+inline void to_json(nlohmann::json& j, const score_stream_entry<T>& e)
 {
     j = {
         {"name", e.name},
@@ -100,7 +97,7 @@ inline void to_json(nlohmann::json& j, const scoreboard_entry<T>& e)
 
 
 template<typename T>
-inline void from_json(const nlohmann::json& j, scoreboard_entry<T>& e)
+inline void from_json(const nlohmann::json& j, score_stream_entry<T>& e)
 {
     j.at("name").get_to(e.name);
     j.at("timestamp").get_to(e.timestamp);
