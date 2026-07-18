@@ -23,7 +23,8 @@ constexpr const char* NAMEBOARD_TIMESTAMP_KEY = "timestamp";
 constexpr const std::string NAMEBOARDS_SUBDIRECTORY_NAME = "nameboards";
 /**
  * @class nameboard
- * @brief Stores and ranks unique names with optional persistence.
+ * @brief Stores and ranks unique names with optional persistence. 
+ * New unique names are appended at the end.
  */
 class nameboard {
     private:
