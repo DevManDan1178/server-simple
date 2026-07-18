@@ -9,7 +9,7 @@
 #include <optional>
 #include <set>
 #include <vector>
-#include <unordered_map>
+#include <list>
 
 #include <nlohmann/json.hpp>
 
@@ -33,7 +33,7 @@ class nameboard {
 
         std::uint64_t next_id = 0;
 
-        std::unordered_map<std::string, entry> names_to_entry;
+        std::list<entry> entries;
         std::multiset<entry*, entry_ptr_comparator> ranking;
 
     public:
@@ -56,21 +56,15 @@ class nameboard {
          * @return Ranking position, or nullopt if the name already exists.
          */
         std::optional<std::size_t> add_name(const std::string& name) {
-            if (names_to_entry.contains(name)) {
-                return std::nullopt;
-            }
-                
             auto now = static_cast<int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 
-            auto [map_it, inserted] = names_to_entry.emplace(
+            entries.emplace_back(entry{
                 name,
-                entry{
-                    name,
-                    now,
-                    next_id++
-                });
+                now,
+                next_id++
+            });
 
-            entry& e = map_it->second;
+            entry& e = entries.back();
 
             auto rank_it = ranking.insert(&e);
             e.position = rank_it;
@@ -81,39 +75,31 @@ class nameboard {
                 auto oldest = ranking.begin();
                 entry* oldest_entry = *oldest;
 
-                if (oldest == rank_it)
-                {
+                if (oldest == rank_it) {
                     ranking.erase(oldest);
-                    names_to_entry.erase(name);
+
+                    for (auto it = entries.begin(); it != entries.end(); ++it) {
+                        if (&*it == oldest_entry) {
+                            entries.erase(it);
+                            break;
+                        }
+                    }
+
                     return std::nullopt;
                 }
 
                 ranking.erase(oldest);
-                names_to_entry.erase(oldest_entry->name);
+
+                for (auto it = entries.begin(); it != entries.end(); ++it) {
+                    if (&*it == oldest_entry) {
+                        entries.erase(it);
+                        break;
+                    }
+                }
             }
 
             return index;
         }
-
-
-        /**
-         * @brief Removes a name from the board.
-         * @param name Name to remove.
-         * @return True if removed, false if not found.
-         */
-        bool remove_name(const std::string& name) {
-            auto it = names_to_entry.find(name);
-
-            if (it == names_to_entry.end()) {
-                return false;
-            }
-                
-            ranking.erase(it->second.position);
-            names_to_entry.erase(it);
-
-            return true;
-        }
-
 
          /**
          * @brief Checks if a name exists.
@@ -121,7 +107,12 @@ class nameboard {
          * @return True if found.
          */
         bool contains(const std::string& name) const {
-            return names_to_entry.count(name) != 0;
+        return std::any_of(
+            entries.begin(),
+            entries.end(),
+            [&](const entry& e) {
+                return e.name == name;
+            });
         }
 
         /**
@@ -270,20 +261,18 @@ class nameboard {
                 json j;
                 in >> j;
 
-                names_to_entry.clear();
+                entries.clear();
                 ranking.clear();
                 next_id = 0;
 
                 for (const auto& item : j) {
-                    auto [map_it, inserted] = names_to_entry.emplace(
+                    entries.emplace_back(entry{
                         item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
-                        entry{
-                            item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
-                            item.at(NAMEBOARD_TIMESTAMP_KEY).get<int64_t>(),
-                            next_id++
-                        });
+                        item.at(NAMEBOARD_TIMESTAMP_KEY).get<int64_t>(),
+                        next_id++
+                    });
 
-                    entry& e = map_it->second;
+                    entry& e = entries.back();
 
                     auto rank_it = ranking.insert(&e);
                     e.position = rank_it;
