@@ -55,10 +55,11 @@ class leaderboard {
             load();
         }
 
+        size_t size() {
+            return ranking.size();
+        }
 
-
-        std::optional<std::size_t>
-        submit_score(const std::string& player, T score) {
+        std::optional<std::size_t> submit_score(const std::string& player, T score) {
             auto now = static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 
             auto get_index = [this](auto it) {
@@ -130,8 +131,7 @@ class leaderboard {
 
 
 
-        std::vector<entry_type>
-        get_top_scores(std::size_t count) const {
+        std::vector<entry_type> get_top_scores(std::size_t count) const {
             std::vector<entry_type> result;
             count = std::min(count, ranking.size());
             
@@ -147,8 +147,7 @@ class leaderboard {
 
 
 
-        std::vector<entry_type>
-        get_bottom_scores(std::size_t count) const {
+        std::vector<entry_type> get_bottom_scores(std::size_t count) const {
             std::vector<entry_type> result;
 
             count = std::min(count, ranking.size());
@@ -166,8 +165,7 @@ class leaderboard {
 
 
 
-        std::vector<entry_type>
-        get_range_from_top(std::size_t start, std::size_t end) const {
+        std::vector<entry_type> get_range_from_top(std::size_t start, std::size_t end) const {
             std::vector<entry_type> result;
 
             if (start >= ranking.size() || start > end) {
@@ -187,11 +185,7 @@ class leaderboard {
         }
 
 
-
-
-
-        std::vector<entry_type>
-        get_range_from_bottom(std::size_t start, std::size_t end) const {
+        std::vector<entry_type> get_range_from_bottom(std::size_t start, std::size_t end) const {
             std::vector<entry_type> result;
 
 
