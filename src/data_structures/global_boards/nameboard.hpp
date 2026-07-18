@@ -50,6 +50,10 @@ class nameboard {
             load();
         }
 
+        size_t size() {
+            return ranking.size();
+        }
+
         /**
          * @brief Adds a name to the board.
          * @param name Name to add.

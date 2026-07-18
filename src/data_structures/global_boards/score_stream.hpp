@@ -195,7 +195,9 @@ class score_stream {
             return true;
         }
 
-
+        size_t size() {
+            return entries.size();
+        }
 
     private:
 
