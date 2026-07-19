@@ -45,16 +45,22 @@ struct leaderboard_entry;
 
 template<typename T>
 struct leaderboard_entry_ptr_comparator {
+    bool highest_first = true;
     bool operator()(const leaderboard_entry<T>* a, const leaderboard_entry<T>* b) const;
 };
 
 
 template<typename T>
 struct leaderboard_entry_comparator : entry_comparator {
-    bool operator()(const leaderboard_entry<T>& a, const leaderboard_entry<T>& b) const {
-        if (a.score != b.score)
-            return a.score > b.score;
+    bool highest_first = true;
 
+    explicit leaderboard_entry_comparator(bool highest_first = true) : highest_first(highest_first) {}
+
+    bool operator()(const leaderboard_entry<T>& a, const leaderboard_entry<T>& b) const {
+        if (a.score != b.score) {
+            return highest_first ? a.score > b.score : a.score < b.score;
+        }
+        
         return entry_comparator::operator()(a, b);
     }
 };
@@ -62,7 +68,7 @@ struct leaderboard_entry_comparator : entry_comparator {
 
 template<typename T>
 inline bool leaderboard_entry_ptr_comparator<T>::operator()(const leaderboard_entry<T>* a, const leaderboard_entry<T>* b) const {
-    return leaderboard_entry_comparator<T>{}(*a, *b);
+    return leaderboard_entry_comparator<T>{highest_first}(*a, *b);
 };
 
 

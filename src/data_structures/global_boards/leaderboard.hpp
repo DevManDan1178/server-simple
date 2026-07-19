@@ -34,24 +34,27 @@ class leaderboard {
         using entry_ptr = entry_type*;
 
         const std::filesystem::path file_path;
-        const std::size_t max_size;
+        
 
-        std::uint64_t next_id = 0;
+        
 
         std::unordered_map<std::string,std::unique_ptr<entry_type>> entries;
 
 
         // Only stores pointers, does not own entries
         std::multiset<entry_ptr,leaderboard_entry_ptr_comparator<T>> ranking;
-
+        
+        std::uint64_t next_id = 0;
+        const std::size_t max_size;
 
 
     public:
 
         explicit leaderboard(
-            const std::filesystem::path& file_path,
-            std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE
-        ) : file_path(file_path), max_size(max_size){
+            const std::filesystem::path& file_path,       
+            std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE,
+            bool highest_first = true
+        ) : file_path(file_path), max_size(max_size), ranking(leaderboard_entry_ptr_comparator<T>{highest_first}) {
             load();
         }
 
