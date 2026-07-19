@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <iostream>
 #include <filesystem>
+#include <tuple>
 
 
 #include <nlohmann/json.hpp>
@@ -23,15 +24,20 @@ constexpr const std::string LEADERBOARDS_SUBDIRECTORY_NAME = "leaderboards";
 
 
 /**
- * @brief Stores and manages a persistent leaderboard.
+ * @brief Stores and manages a leaderboard.
+ *
+ * Maintains player scores in ranked order and limits the number of stored
+ * entries. Existing players are updated only when the new score improves
+ * their ranking.
+ *
  * @tparam T Score type.
  */
-
 template<typename T>
 class leaderboard {
     private:
         using entry_type = leaderboard_entry<T>;
         using entry_ptr = entry_type*;
+        using ptr_comparator = leaderboard_entry_ptr_comparator<T>;
 
         const std::filesystem::path file_path;
         
@@ -42,14 +48,20 @@ class leaderboard {
 
 
         // Only stores pointers, does not own entries
-        std::multiset<entry_ptr,leaderboard_entry_ptr_comparator<T>> ranking;
+        std::multiset<entry_ptr, ptr_comparator> ranking;
         
         std::uint64_t next_id = 0;
         const std::size_t max_size;
 
 
     public:
-
+        /**
+         * @brief Creates a leaderboard and loads saved data.
+         *
+         * @param file_path JSON storage file.
+         * @param max_size Maximum number of entries.
+         * @param highest_first Sort direction.
+         */
         explicit leaderboard(
             const std::filesystem::path& file_path,       
             std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE,
@@ -58,11 +70,14 @@ class leaderboard {
             load();
         }
 
-        size_t size() {
-            return ranking.size();
-        }
 
-        std::optional<std::size_t> submit_score(const std::string& player, T score) {
+         /**
+         * @brief Adds or updates a player score.
+         *
+         * @return Tuple of (Player ranking position, or std::nullopt if rejected) and (Removed past index, or std::nullopt if none)
+         * The returned past index is that before the change
+         */
+        std::tuple<std::optional<std::size_t>, std::optional<std::size_t>> submit_score(const std::string& player, T score) {
             auto now = static_cast<std::int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 
             auto get_index = [this](auto it) {
@@ -77,15 +92,19 @@ class leaderboard {
             auto existing = entries.find(player);
 
 
-
             if (existing != entries.end()) {
                 auto& entry = existing->second;
 
-                if (score <= entry->score) {
-                    return std::nullopt;
+                entry_type candidate;
+                candidate.score = score;
+                
+                if (!ranking.key_comp()(&candidate, entry.get())) {
+                    return {std::nullopt, std::nullopt};
                 }
-                    
-                ranking.erase(entry->ranking_position);
+                
+                auto previous_position = entry->ranking_position;
+                size_t previous_index = get_index(previous_position);
+                ranking.erase(previous_position);
 
                 entry->score = score;
                 entry->timestamp = now;
@@ -95,7 +114,7 @@ class leaderboard {
                 auto ranking_it = ranking.insert(entry.get());
                 entry->ranking_position = ranking_it;
 
-                return get_index(ranking_it);
+                return {get_index(ranking_it), previous_index};
             }
 
             auto entry = std::make_unique<entry_type>();
@@ -108,8 +127,8 @@ class leaderboard {
             if (ranking.size() >= max_size) {
                 auto worst = std::prev(ranking.end());
 
-                if (!leaderboard_entry_ptr_comparator<T>{}(entry.get(), *worst)) {
-                    return std::nullopt;
+                if (!ranking.key_comp()(entry.get(), *worst)) {
+                    return {std::nullopt, std::nullopt};
                 }
             }
 
@@ -127,13 +146,13 @@ class leaderboard {
                 remove_last();
             }
 
-            return placement;
+            return {placement, std::nullopt};
         }
 
 
-
-
-
+        /**
+         * @brief Gets top ranked entries.
+         */
         std::vector<entry_type> get_top_scores(std::size_t count) const {
             std::vector<entry_type> result;
             count = std::min(count, ranking.size());
@@ -149,7 +168,9 @@ class leaderboard {
 
 
 
-
+        /**
+         * @brief Gets lowest ranked entries.
+         */
         std::vector<entry_type> get_bottom_scores(std::size_t count) const {
             std::vector<entry_type> result;
 
@@ -166,8 +187,9 @@ class leaderboard {
 
 
 
-
-
+        /**
+         * @brief Gets a ranking range from the top.
+         */
         std::vector<entry_type> get_range_from_top(std::size_t start, std::size_t end) const {
             std::vector<entry_type> result;
 
@@ -187,7 +209,9 @@ class leaderboard {
             return result;
         }
 
-
+         /**
+         * @brief Gets a ranking range from the bottom.
+         */
         std::vector<entry_type> get_range_from_bottom(std::size_t start, std::size_t end) const {
             std::vector<entry_type> result;
 
@@ -211,7 +235,9 @@ class leaderboard {
 
 
 
-
+        /**
+         * @brief Saves leaderboard data to JSON.
+         */
         bool save() const {
             try {
                 std::ofstream out(file_path);
@@ -239,9 +265,15 @@ class leaderboard {
             return true;
         }
 
+
+        size_t size() {
+            return ranking.size();
+        }
     private:
 
-
+        /**
+         * @brief Saves leaderboard data to JSON.
+         */
         bool load() {
             try {
                 std::ifstream in(file_path);
