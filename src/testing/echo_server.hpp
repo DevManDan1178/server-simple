@@ -9,7 +9,7 @@ public:
 
 protected:
     // Implement the request processing logic
-    virtual boost::beast::http::response<boost::beast::http::string_body> process_client_request(boost_http_request request) override {
+    virtual boost::beast::http::response<boost::beast::http::string_body> process_client_request(const std::string client_ip, const boost_http_request request) override {
         log_debug() << "[Server] Received: " << request << "\n";
         
         // Example logic: Turn the request into uppercase and send it back
