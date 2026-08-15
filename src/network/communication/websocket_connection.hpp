@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-constexpr const int MAX_INCOMING_QUEUE_SIZE = 10000;
+
 
 struct incoming_packet {
     std::shared_ptr<class websocket_session> session;
@@ -75,14 +75,17 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
         }
 
         void push_incoming_packet(std::string payload) {
-            if (packets_queue_in.size() > MAX_INCOMING_QUEUE_SIZE) {
+            incoming_packet packet{
+                shared_from_this(), 
+                std::move(payload)
+            };
+            if (!packets_queue_in.try_push_back(std::move(packet))) {
                 std::cerr << "Closing session: flooding threshold reached (Backpressure).\n";
                 boost::beast::error_code ec;
                 web_socket.close(boost::beast::websocket::close_code::normal, ec);
                 return;
             }
-            log_debug() << "Pushing packet in connection";
-            packets_queue_in.push_back({shared_from_this(), std::move(payload)});
+            log_debug() << "Pushed packet in connection";
         }
 
         void write_message_async() {
