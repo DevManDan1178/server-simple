@@ -119,4 +119,14 @@ namespace http_parser {
         response.set(boost::beast::http::field::content_type, "text/plain");
         response.body() = response_text;
     }
+
+
+    /**
+     * @brief sets the response to status service unavailable with response body "Server overloaded"
+     */
+    void set_response_server_overloaded(boost_http_response& response) { 
+        response.result( boost::beast::http::status::service_unavailable);
+        response.set(boost::beast::http::field::content_type, "text/plain");
+        response.body() = "Server overloaded";
+    }
 }
