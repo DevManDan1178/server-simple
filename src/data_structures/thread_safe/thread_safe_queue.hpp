@@ -5,6 +5,9 @@
 #include <deque>
 #include <stdexcept>
 #include <utility>
+#include <functional>
+#include <optional>
+#include <vector>
 
 /**
  * @brief Thread-safe queue supporting concurrent access.
@@ -13,21 +16,29 @@
  */
 template<typename T>
 class thread_safe_queue {
+    public:
+        using size_function = std::function<std::size_t(const T&)>;
     protected:
         mutable std::mutex mutex_queue;
         std::condition_variable waiting;
         std::deque<T> dequeue;
         bool stopped = false;
 
-    const size_t max_size;
-    public:
+        const size_t max_size;
+        const size_t max_bytes;
+        const size_function get_item_size;
 
+        size_t current_bytes = 0;
+    public:
+        
         /**
          * @brief Creates an empty queue.
          * @param max_size max size of the queue [0 for unlimited size]
+         * @param max_bytes max bytes of the queue [0 for unlimited size]
+         * @param get_item_size function used to determine the size of each item
          */
-        explicit thread_safe_queue(size_t max_size = 0) 
-        : max_size(max_size) {}
+        explicit thread_safe_queue(size_t max_size = 0, size_t max_bytes = 0, size_function get_item_size = [](const T&) {return 0;}) 
+        : max_size(max_size), max_bytes(max_bytes), get_item_size(get_item_size) {}
         
         /**
          * @brief Prevents copying of the queue.
@@ -78,11 +89,17 @@ class thread_safe_queue {
          */
         bool try_push_back(const T& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+
+                if (stopped || 
+                    (max_bytes != 0 && (bytes > max_bytes - current_bytes)) ||
+                    (max_size != 0 && dequeue.size() >= max_size)) {
                     return false;
                 }
+
                 dequeue.emplace_back(item);
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -96,13 +113,17 @@ class thread_safe_queue {
          */
         bool try_push_back(T&& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
 
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                if (stopped || 
+                    (max_bytes != 0 && (bytes > max_bytes - current_bytes)) ||
+                    (max_size != 0 && dequeue.size() >= max_size)) {
                     return false;
                 }
 
                 dequeue.emplace_back(std::move(item));
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -116,13 +137,17 @@ class thread_safe_queue {
          */
         bool try_push_front(const T& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
 
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                if (stopped || 
+                    (max_bytes != 0 && (bytes > max_bytes - current_bytes)) ||
+                    (max_size != 0 && dequeue.size() >= max_size)) {
                     return false;
                 }
 
                 dequeue.emplace_front(item);
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -137,13 +162,17 @@ class thread_safe_queue {
          */
         bool try_push_front(T&& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
                 
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                if (stopped || 
+                    (max_bytes != 0 && (bytes > max_bytes - current_bytes)) ||
+                    (max_size != 0 && dequeue.size() >= max_size)) {
                     return false;
                 }
 
                 dequeue.emplace_front(std::move(item));
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -156,8 +185,11 @@ class thread_safe_queue {
          */
         void push_back(const T& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
+
                 dequeue.emplace_back(item);
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -169,8 +201,11 @@ class thread_safe_queue {
          */
         void push_back(T&& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
+
                 dequeue.emplace_back(std::move(item));
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -182,8 +217,11 @@ class thread_safe_queue {
          */
         void push_front(const T& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
+
                 dequeue.emplace_front(item);
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -196,8 +234,11 @@ class thread_safe_queue {
          */
         void push_front(T&& item) {
             {
+                const size_t bytes = get_item_size(item);
                 std::scoped_lock lock(mutex_queue);
+
                 dequeue.emplace_front(std::move(item));
+                current_bytes += bytes;
             }
 
             waiting.notify_one();
@@ -220,7 +261,9 @@ class thread_safe_queue {
 
         void clear() {
             std::scoped_lock lock(mutex_queue);
+
             dequeue.clear();
+            current_bytes = 0;
         }
 
         /**
@@ -236,6 +279,8 @@ class thread_safe_queue {
             }
 
             T item = std::move(dequeue.front());
+
+            current_bytes -= get_item_size(item);
             dequeue.pop_front();
 
             return item;
@@ -254,6 +299,8 @@ class thread_safe_queue {
             }
 
             T item = std::move(dequeue.back());
+
+            current_bytes -= get_item_size(item);
             dequeue.pop_back();
 
             return item;
@@ -278,6 +325,8 @@ class thread_safe_queue {
             }
 
             T item = std::move(dequeue.front());
+
+            current_bytes -= get_item_size(item);
             dequeue.pop_front();
 
             return item;
@@ -322,9 +371,11 @@ class thread_safe_queue {
             std::scoped_lock lock(mutex_queue);
 
             dequeue.clear();
+            current_bytes = 0;
 
             for (const auto& item : items) {
                 dequeue.push_back(item);
+                current_bytes += get_item_size(item);
             }
         }
 };
