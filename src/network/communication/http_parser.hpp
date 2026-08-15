@@ -1,5 +1,9 @@
 #pragma once
 
+#include <boost/asio.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+
 #include <string>
 #include <unordered_map>
 
@@ -66,5 +70,53 @@ namespace http_parser {
         }
 
         return params;
+    }
+
+    using boost_http_response =
+        boost::beast::http::response<boost::beast::http::string_body>;
+    using boost_http_status = boost::beast::http::status;
+
+    /**
+     * @brief sets response result to bad request and the response text as text plain
+     */
+    void set_response_bad_request(boost_http_response& response, const std::string& response_text) {
+        response.result(boost::beast::http::status::bad_request);
+        response.set(boost::beast::http::field::content_type, "text/plain");
+        response.body() = response_text;
+    }
+
+    /**
+     * @brief sets response to not found in and response body in text plain
+     */
+    void set_response_not_found(boost_http_response& response, const std::string& response_text = "404 Not Found") {
+        response.set(boost::beast::http::field::content_type, "text/plain");
+        response.result(boost::beast::http::status::not_found);
+        response.body() = response_text;
+    }
+
+    /**
+     * @brief sets resposne to content type json and dumps json into result
+     */
+    void set_response_json(boost_http_response& response, json j) {
+        response.set(boost::beast::http::field::content_type, "application/json");
+        response.body() = j.dump();
+    }
+
+    /**
+     * @brief sets the response to status unauthorized with response body in text plain
+     */
+    void set_response_unauthorized(boost_http_response& response, const std::string& response_text) {
+        response.result(boost::beast::http::status::unauthorized);
+        response.set(boost::beast::http::field::content_type, "text/plain");
+        response.body() = response_text;
+    }
+
+    /**
+     * @brief sets the response to status too many requests with response body in text plain
+     */
+    void set_response_rate_limited(boost_http_response& response, const std::string& response_text = "Rate limit exceeded") {
+        response.result(boost::beast::http::status::too_many_requests);
+        response.set(boost::beast::http::field::content_type, "text/plain");
+        response.body() = response_text;
     }
 }

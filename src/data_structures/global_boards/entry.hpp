@@ -5,13 +5,20 @@
 #include <set>
 #include <nlohmann/json.hpp>
 
+
+
+struct entry;
+
+struct entry_ptr_comparator {
+    bool operator()(const entry* a, const entry* b) const;
+};
+
 struct entry {
     std::string name;
     int64_t timestamp;
     uint64_t id;
 
-    // Not serialized
-    std::multiset<entry>::iterator position;
+    std::multiset<entry*, entry_ptr_comparator>::iterator position;
 };
 
 struct entry_comparator {
@@ -23,6 +30,64 @@ struct entry_comparator {
         return a.id < b.id;
     }
 };
+
+inline bool entry_ptr_comparator::operator()(const entry* a, const entry* b) const
+{
+    if (a->timestamp != b->timestamp)
+        return a->timestamp < b->timestamp;
+
+    return a->id < b->id;
+}
+
+
+template<typename T>
+struct leaderboard_entry;
+
+template<typename T>
+struct leaderboard_entry_ptr_comparator {
+    bool highest_first = true;
+    bool operator()(const leaderboard_entry<T>* a, const leaderboard_entry<T>* b) const;
+};
+
+
+template<typename T>
+struct leaderboard_entry_comparator : entry_comparator {
+    bool highest_first = true;
+
+    explicit leaderboard_entry_comparator(bool highest_first = true) : highest_first(highest_first) {}
+
+    bool operator()(const leaderboard_entry<T>& a, const leaderboard_entry<T>& b) const {
+        if (a.score != b.score) {
+            return highest_first ? a.score > b.score : a.score < b.score;
+        }
+        
+        return entry_comparator::operator()(a, b);
+    }
+};
+
+
+template<typename T>
+inline bool leaderboard_entry_ptr_comparator<T>::operator()(const leaderboard_entry<T>* a, const leaderboard_entry<T>* b) const {
+    return leaderboard_entry_comparator<T>{highest_first}(*a, *b);
+};
+
+
+template<typename T>
+struct leaderboard_entry : entry {
+    T score;
+
+    typename std::multiset<
+        leaderboard_entry<T>*,
+        leaderboard_entry_ptr_comparator<T>
+    >::iterator ranking_position;
+};
+
+
+template<typename T>
+struct score_stream_entry : entry {
+    T score;
+};
+
 
 inline void to_json(nlohmann::json& j, const entry& e)
 {
@@ -40,14 +105,6 @@ inline void from_json(const nlohmann::json& j, entry& e)
     j.at("id").get_to(e.id);
 }
 
-
-template<typename T>
-struct leaderboard_entry : entry {
-    T score;
-
-    // Not serialized
-    typename std::multiset<leaderboard_entry<T>>::iterator ranking_position;
-};
 
 template<typename T>
 inline void to_json(nlohmann::json& j, const leaderboard_entry<T>& e)
@@ -69,12 +126,20 @@ inline void from_json(const nlohmann::json& j, leaderboard_entry<T>& e)
 
 
 template<typename T>
-struct leaderboard_entry_comparator : entry_comparator {
-    bool operator()(const leaderboard_entry<T>& a, const leaderboard_entry<T>& b) const
-    {
-        if (a.score != b.score)
-            return a.score > b.score; 
+inline void to_json(nlohmann::json& j, const score_stream_entry<T>& e)
+{
+    j = {
+        {"name", e.name},
+        {"timestamp", e.timestamp},
+        {"score", e.score}
+    };
+}
 
-        return entry_comparator::operator()(a, b);
-    }
-};
+
+template<typename T>
+inline void from_json(const nlohmann::json& j, score_stream_entry<T>& e)
+{
+    j.at("name").get_to(e.name);
+    j.at("timestamp").get_to(e.timestamp);
+    j.at("score").get_to(e.score);
+}
