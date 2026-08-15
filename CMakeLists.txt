@@ -1,3 +1,4 @@
+#[[ 
 cmake_minimum_required(VERSION 3.16)
 
 project(Server
@@ -28,14 +29,15 @@ target_include_directories(server-simple INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-#[[  OLD CMAKELISTS.TXT (before making into submodule)
-
+ OLD CMAKELISTS.TXT (before making into submodule)
+]]
 cmake_minimum_required(VERSION 3.16)
 
 project(Server
     VERSION 1.0
     LANGUAGES CXX
 )
+
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,7 +53,9 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-add_executable(server)
+add_executable(server 
+    src/main.cpp
+)
 
 add_subdirectory(external/json)
 target_link_libraries(server PRIVATE nlohmann_json::nlohmann_json)
@@ -64,4 +68,4 @@ target_include_directories(server PRIVATE
 
 target_link_libraries(server PRIVATE 
     Boost::boost
-)]]
+)
