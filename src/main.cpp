@@ -1,15 +1,18 @@
 #include "testing/echo_server.hpp"
 #include <iostream>
 #include <algorithm>
+#include <atomic>
+#include <csignal>
 #include "testing/test_persistent_server.hpp"
 #include "testing/test_websocket_client.hpp"
+#include "network/example_server/portfolio_server.hpp"
 #include <iostream>
 #include <thread>
 #include <chrono>
 #include <cassert>
 
-
-void run_tests() {
+/*
+void test_persistent_server() {
     constexpr unsigned short TEST_PORT = 8080;
     
     std::cout << "[TEST] Starting Server...\n";
@@ -87,18 +90,33 @@ void run_tests() {
 
     std::cout << "\n>>> ALL WEBSOCKET TESTS PASSED SUCCESSFULLY! <<<\n";
 }
+*/
+
+portfolio_server* server_instance = nullptr;
+
+void shutdown_handler(int)
+{
+    if (server_instance)
+    {
+        server_instance->save();
+        server_instance->stop();
+    }
+}
+
 
 int main() {
-    /*
+    std::atomic<bool> running(true);
     try {
         log_debug() << "Starting echo server on port 8080...\n";
-        echo_server server(8080);
-        server.launch(); // This blocks and runs the async loop
-    
+        portfolio_server server(8080);
+        server_instance = &server;
+        std::signal(SIGINT, shutdown_handler);   
+        std::signal(SIGTERM, shutdown_handler);
+        server.launch();
+        server.join_context_thread();
     } catch (const std::exception& e) {
         std::cerr << "Exception: " << e.what() << "\n";
     }
-    */
-    run_tests();
+    
     return 0;
 }
