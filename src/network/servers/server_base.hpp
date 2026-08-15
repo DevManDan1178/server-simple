@@ -21,6 +21,7 @@ class server_base {
     protected:    
         boost::asio::ip::tcp::acceptor asio_acceptor;
         std::thread context_thread;
+        std::atomic<bool> stopping{false};
 
     public:
         server_base(unsigned short port) : 
@@ -57,17 +58,27 @@ class server_base {
             }
         }
 
-        virtual void stop() {
-            asio_context.stop();
-            join_context_thread();
-            log_debug() << "[SERVER] stopped \n"; 
+        bool try_stop() {
+            if (!stopping.exchange(true)) {
+                stop();
+                return true;
+            }
+            return false;
         }
+
+        
 
         bool is_running() {
             return !asio_context.stopped();
         }
 
-     protected:
+    protected:
+        virtual void stop() {
+            asio_context.stop();
+            join_context_thread();
+            log_debug() << "[SERVER] stopped \n"; 
+        }
+        
         virtual void start_accept_async() = 0;
      
 };
