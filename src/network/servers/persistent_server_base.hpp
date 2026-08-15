@@ -5,8 +5,9 @@
 #include <string>
 #include <algorithm>
 
-constexpr const float DEFAULT_FIXED_DELTA_TIME = 1.0f;///60.0f;
-constexpr const size_t DEFAULT_MAX_INCOMING_PACKETS = 10000;
+constexpr const float DEFAULT_FIXED_DELTA_TIME = 1.0f; // /60.0f;
+constexpr const size_t DEFAULT_MAX_INCOMING_PACKETS = 128 * 1024;
+constexpr const size_t DEFAULT_MAX_INCOMING_BYTES = 64 * 1024 * 1024;
 
 // Server that does not close when the user joins
 class persistent_server_base : public server_base {
@@ -15,11 +16,21 @@ class persistent_server_base : public server_base {
         const float fixed_delta_time;
         thread_safe_queue<incoming_packet> incoming_packets_queue;
     public:
-        persistent_server_base(unsigned short port, float _fixed_delta_time = DEFAULT_FIXED_DELTA_TIME, size_t max_incoming_packets = DEFAULT_MAX_INCOMING_PACKETS)
-            : server_base(port), fixed_delta_time(std::max(_fixed_delta_time, 0.0f)), incoming_packets_queue(max_incoming_packets) {
-                if (_fixed_delta_time < 0) {
-                    std::cerr << "Attempt to set server delta time to negative number - defaulted to zero (no update)\n";
-                }
+        persistent_server_base(
+            unsigned short port, 
+            float _fixed_delta_time = DEFAULT_FIXED_DELTA_TIME, 
+            size_t max_incoming_packets = DEFAULT_MAX_INCOMING_PACKETS,
+            size_t max_incoming_bytes = DEFAULT_MAX_INCOMING_BYTES
+        )   : 
+            server_base(port), 
+            fixed_delta_time(std::max(_fixed_delta_time, 0.0f)), 
+            incoming_packets_queue(max_incoming_packets, max_incoming_bytes, [](const incoming_packet& packet) {
+                return packet.payload.size();
+            }) {
+                
+            if (_fixed_delta_time < 0) {
+                std::cerr << "Attempt to set server delta time to negative number - defaulted to zero (no update)\n";
+            }
         }
 
         virtual void launch() {
@@ -51,7 +62,7 @@ class persistent_server_base : public server_base {
             server_base::stop();
             incoming_packets_queue.stop();
         }
-        
+
         virtual void on_client_connected(boost::asio::ip::tcp::socket&) {
             log_debug() << "[SERVER] Client connected";
         }

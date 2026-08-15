@@ -5,7 +5,8 @@
 #include "network/communication/http_connection.hpp"
 
 constexpr const size_t DEFAULT_WORKER_THREAD_COUNT = 4;
-constexpr const size_t DEFAULT_MAX_PENDING_REQUESTS = 1024;
+constexpr const size_t DEFAULT_MAX_PENDING_REQUESTS = 64 * 1024;
+constexpr const size_t DEFAULT_MAX_REQUEST_BYTES = 64 * 1024 * 1024;
 
 constexpr const double DEFAULT_MAX_IP_RATE_TOKENS = 50;
 constexpr const double DEFAULT_IP_TOKEN_REFILL_RATE = 0.5;
@@ -22,9 +23,15 @@ class request_server_base : public server_base {
             unsigned short port, 
             size_t worker_count = DEFAULT_WORKER_THREAD_COUNT, 
             size_t max_pending_requests = DEFAULT_MAX_PENDING_REQUESTS,
+            size_t max_request_bytes = DEFAULT_MAX_REQUEST_BYTES,
             double max_ip_rate_tokens = DEFAULT_MAX_IP_RATE_TOKENS, 
             double ip_token_refill_rate = DEFAULT_IP_TOKEN_REFILL_RATE
-        ) : server_base(port), request_queue(max_pending_requests), ip_rate_limiter(max_ip_rate_tokens, ip_token_refill_rate) {
+        )   : 
+            server_base(port), 
+            request_queue(max_pending_requests, max_request_bytes, [](const request_task& task) {
+                return task.request.body().size();
+            }), 
+            ip_rate_limiter(max_ip_rate_tokens, ip_token_refill_rate) {
 
             for(size_t i = 0; i < worker_count; i++) {
                 workers.emplace_back(
