@@ -185,12 +185,7 @@ struct request_task {
 
         void close() {
             boost::beast::error_code ec;
-
-            socket.shutdown(
-                boost::asio::ip::tcp::socket::shutdown_both,
-                ec
-            );
-
+            socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
             socket.close(ec);
         }
 };
