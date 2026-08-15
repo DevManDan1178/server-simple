@@ -79,12 +79,14 @@ class thread_safe_queue {
         bool try_push_back(const T& item) {
             {
                 std::scoped_lock lock(mutex_queue);
-                if (max_size != 0 && max_size <= dequeue.size()) {
-                return false;
+                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                    return false;
                 }
                 dequeue.emplace_back(item);
             }
-        return true;
+
+            waiting.notify_one();
+            return true;
         }
 
         /**
@@ -96,7 +98,7 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (max_size != 0 && dequeue.size() >= max_size) {
+                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
                     return false;
                 }
 
@@ -116,7 +118,7 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (max_size != 0 && dequeue.size() >= max_size) {
+                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
                     return false;
                 }
 
@@ -124,6 +126,7 @@ class thread_safe_queue {
             }
 
             waiting.notify_one();
+            return true;
         }
 
         
@@ -135,8 +138,8 @@ class thread_safe_queue {
         bool try_push_front(T&& item) {
             {
                 std::scoped_lock lock(mutex_queue);
-
-                if (max_size != 0 && dequeue.size() >= max_size) {
+                
+                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
                     return false;
                 }
 
@@ -144,6 +147,7 @@ class thread_safe_queue {
             }
 
             waiting.notify_one();
+            return true;
         }
 
         /**
@@ -261,15 +265,16 @@ class thread_safe_queue {
          * @return Next element in the queue.
          * @throws std::runtime_error If the queue is stopped.
          */
-        T wait_and_pop() {
+        std::optional<T> wait_and_pop() {
             std::unique_lock<std::mutex> lock(mutex_queue);
 
             waiting.wait(lock, [this] {
                 return stopped || !dequeue.empty();
             });
 
-            if (stopped && dequeue.empty()) {
+            if (dequeue.empty()) {
                 throw std::runtime_error("Queue stopped");
+                return std::nullopt;
             }
 
             T item = std::move(dequeue.front());
