@@ -81,7 +81,7 @@ class request_server_base : public server_base {
 
 
 
-        virtual boost_http_response process_client_request(const std::string client_ip,const boost_http_request request) = 0;
+        virtual boost_http_response process_client_request(const std::string client_ip, const boost_http_request request) = 0;
 
     private:
 
