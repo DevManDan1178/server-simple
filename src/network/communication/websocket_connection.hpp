@@ -23,7 +23,7 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
         
         thread_safe_queue<incoming_packet>& packets_queue_in;
         
-        std::vector<std::string> write_queue;
+        std::deque<std::string> write_queue;
 
     public:
     
