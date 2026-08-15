@@ -17,7 +17,7 @@
 template<typename T>
 class thread_safe_queue {
     public:
-        using size_function = std::function<std::size_t(const T&)>;
+        using size_function = std::function<size_t(const T&)>;
     protected:
         mutable std::mutex mutex_queue;
         std::condition_variable waiting;
