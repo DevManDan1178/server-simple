@@ -24,11 +24,11 @@ class thread_safe_queue {
 
         /**
          * @brief Creates an empty queue.
-     * @param max_size max size of the queue [0 for unlimited size]
+         * @param max_size max size of the queue [0 for unlimited size]
          */
-
         explicit thread_safe_queue(size_t max_size = 0) 
         : max_size(max_size) {}
+        
         /**
          * @brief Prevents copying of the queue.
          */
@@ -71,80 +71,80 @@ class thread_safe_queue {
             return dequeue.back();
         }
     
-    /**
-     * @brief Adds an element to the back if the capacity will not be exceeded
-     * @param item Element to add.
-     * @return if it was added or not
-     */
-    bool try_push_back(const T& item) {
-        {
-            std::scoped_lock lock(mutex_queue);
-            if (max_size != 0 && max_size <= dequeue.size()) {
-            return false;
-            }
-            dequeue.emplace_back(item);
-        }
-      return true;
-    }
-
-    /**
-     * @brief Adds an element to the back if the capacity will not be exceeded
-     * @param item Element to add.
-     * @return if it was added or not
-     */
-    bool try_push_back(T&& item) {
-        {
-            std::scoped_lock lock(mutex_queue);
-
-            if (max_size != 0 && dequeue.size() >= max_size) {
+        /**
+         * @brief Adds an element to the back if the capacity will not be exceeded
+         * @param item Element to add.
+         * @return if it was added or not
+         */
+        bool try_push_back(const T& item) {
+            {
+                std::scoped_lock lock(mutex_queue);
+                if (max_size != 0 && max_size <= dequeue.size()) {
                 return false;
+                }
+                dequeue.emplace_back(item);
             }
-
-            dequeue.emplace_back(std::move(item));
-        }
-
-        waiting.notify_one();
         return true;
-    }
-
-    /**
-     * @brief Adds an element to the front if the capacity will not be exceeded
-     * @param item Element to add.
-     * @return if it was added or not
-     */
-    bool try_push_front(const T& item) {
-        {
-            std::scoped_lock lock(mutex_queue);
-
-            if (max_size != 0 && dequeue.size() >= max_size) {
-                return false;
-            }
-
-            dequeue.emplace_front(item);
         }
 
-        waiting.notify_one();
-    }
+        /**
+         * @brief Adds an element to the back if the capacity will not be exceeded
+         * @param item Element to add.
+         * @return if it was added or not
+         */
+        bool try_push_back(T&& item) {
+            {
+                std::scoped_lock lock(mutex_queue);
 
-    
-     /**
-     * @brief Adds an element to the front if the capacity will not be exceeded
-     * @param item Element to move into the queue.
-     * @return if it was added or not
-     */
-    bool try_push_front(T&& item) {
-        {
-            std::scoped_lock lock(mutex_queue);
+                if (max_size != 0 && dequeue.size() >= max_size) {
+                    return false;
+                }
 
-            if (max_size != 0 && dequeue.size() >= max_size) {
-                return false;
+                dequeue.emplace_back(std::move(item));
             }
 
-            dequeue.emplace_front(std::move(item));
+            waiting.notify_one();
+            return true;
         }
 
-        waiting.notify_one();
-    }
+        /**
+         * @brief Adds an element to the front if the capacity will not be exceeded
+         * @param item Element to add.
+         * @return if it was added or not
+         */
+        bool try_push_front(const T& item) {
+            {
+                std::scoped_lock lock(mutex_queue);
+
+                if (max_size != 0 && dequeue.size() >= max_size) {
+                    return false;
+                }
+
+                dequeue.emplace_front(item);
+            }
+
+            waiting.notify_one();
+        }
+
+        
+        /**
+         * @brief Adds an element to the front if the capacity will not be exceeded
+         * @param item Element to move into the queue.
+         * @return if it was added or not
+         */
+        bool try_push_front(T&& item) {
+            {
+                std::scoped_lock lock(mutex_queue);
+
+                if (max_size != 0 && dequeue.size() >= max_size) {
+                    return false;
+                }
+
+                dequeue.emplace_front(std::move(item));
+            }
+
+            waiting.notify_one();
+        }
 
         /**
          * @brief Adds an element to the back.
