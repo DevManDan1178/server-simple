@@ -104,16 +104,10 @@ class rate_limiter {
 
             auto now = std::chrono::steady_clock::now();
 
-            auto expiry =
-                std::chrono::duration<double>(
-                    max_tokens / refill_rate
-                ).count() * 2;
+            auto expiry = std::chrono::duration<double>(max_tokens / refill_rate).count() * 2;
 
             for (auto it = requests.begin(); it != requests.end();) {
-                double idle =
-                    std::chrono::duration<double>(
-                        now - it->second.last_refill
-                    ).count();
+                double idle = std::chrono::duration<double>(now - it->second.last_refill).count();
 
                 if (idle > expiry) {
                     it = requests.erase(it);
