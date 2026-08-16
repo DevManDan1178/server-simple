@@ -320,7 +320,6 @@ class thread_safe_queue {
             });
 
             if (dequeue.empty()) {
-                throw std::runtime_error("Queue stopped");
                 return std::nullopt;
             }
 
