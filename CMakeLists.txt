@@ -52,26 +52,22 @@ endif()
 
 add_library(server INTERFACE)
 
-target_include_directories(server
-    INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+target_include_directories(server INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(server
-    INTERFACE
-        nlohmann_json::nlohmann_json
-        Boost::boost
+target_link_libraries(server INTERFACE
+    nlohmann_json::nlohmann_json
+    Boost::boost
 )
 
-target_compile_features(server
-    INTERFACE
-        cxx_std_20
+target_compile_features(server INTERFACE
+    cxx_std_20
 )
 
-target_compile_definitions(server
-    INTERFACE
-        DEBUG_MODE
+target_compile_definitions(server INTERFACE
+    DEBUG_MODE
 )
 
 # ------------------------------------------------------------------------------
