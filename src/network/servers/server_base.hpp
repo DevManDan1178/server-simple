@@ -40,14 +40,14 @@ class server_base {
         }
 
         virtual ~server_base() {
-            stop();
+            try_stop();
         };
 
         virtual void launch() {
             log_debug() << "[SERVER] launching \n";
 
             start_accept_async();
-            context_thread = std::thread([this]() {
+            context_thread  = std::thread([this]() {
                 asio_context.run(); 
             });
         }
@@ -58,16 +58,14 @@ class server_base {
             }
         }
 
-        bool try_stop() {
-            if (!stopping.exchange(true)) {
-                stop();
-                return true;
+        void try_stop() {
+            if (stopping.exchange(true)) {
+                return;
             }
-            return false;
+            stop();
         }
 
         
-
         bool is_running() {
             return !asio_context.stopped();
         }
