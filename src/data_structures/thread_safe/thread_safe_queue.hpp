@@ -33,7 +33,11 @@ struct queue_size_traits {
  *
  * @tparam T Type of elements stored in the queue.
  */
-template<typename T>
+template<
+    typename T, 
+    bool EnableMaxSize = true, 
+    bool EnableMaxBytes = true
+>
 class thread_safe_queue {
     public:
     protected:
@@ -98,6 +102,8 @@ class thread_safe_queue {
             return dequeue.back();
         }
     
+        
+
         /**
          * @brief Adds an element to the back if the capacity will not be exceeded
          * @param item Element to add.
@@ -106,19 +112,9 @@ class thread_safe_queue {
         bool try_push_back(const T& item) {
             {
                 std::scoped_lock lock(mutex_queue);
-
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                
+                if (!pre_addition_check_protocol(item)) {
                     return false;
-                }
-
-                if (max_bytes != 0) {
-                    const size_t bytes = queue_size_traits<T>::get(item);
-
-                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
-                        return false;
-                    }
-
-                    current_bytes += bytes;
                 }
 
                 dequeue.emplace_back(item);
@@ -137,18 +133,8 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                if (!pre_addition_check_protocol(item)) {
                     return false;
-                }
-
-                if (max_bytes != 0) {
-                    const size_t bytes = queue_size_traits<T>::get(item);
-
-                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
-                        return false;
-                    }
-
-                    current_bytes += bytes;
                 }
 
                 dequeue.emplace_back(std::move(item));
@@ -167,18 +153,8 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                if (!pre_addition_check_protocol(item)) {
                     return false;
-                }
-
-                if (max_bytes != 0) {
-                    const size_t bytes = queue_size_traits<T>::get(item);
-
-                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
-                        return false;
-                    }
-
-                    current_bytes += bytes;
                 }
 
                 dequeue.emplace_front(item);
@@ -198,18 +174,8 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
                 
-                if (stopped || (max_size != 0 && dequeue.size() >= max_size)) {
+                if (!pre_addition_check_protocol(item)) {
                     return false;
-                }
-
-                if (max_bytes != 0) {
-                    const size_t bytes = queue_size_traits<T>::get(item);
-
-                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
-                        return false;
-                    }
-
-                    current_bytes += bytes;
                 }
 
                 dequeue.emplace_front(std::move(item));
@@ -227,9 +193,7 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (max_bytes != 0) {
-                    current_bytes += queue_size_traits<T>::get(item);
-                }
+                unchecked_addition_protocol(item);
 
                 dequeue.emplace_back(item);      
             }
@@ -245,9 +209,7 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (max_bytes != 0) {
-                    current_bytes += queue_size_traits<T>::get(item);
-                }
+                unchecked_addition_protocol(item);
 
                 dequeue.emplace_back(std::move(item));
             }
@@ -263,9 +225,7 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (max_bytes != 0) {
-                    current_bytes += queue_size_traits<T>::get(item);
-                }
+                unchecked_addition_protocol(item);
 
                 dequeue.emplace_front(item);
             }
@@ -282,9 +242,7 @@ class thread_safe_queue {
             {
                 std::scoped_lock lock(mutex_queue);
 
-                if (max_bytes != 0) {
-                    current_bytes += queue_size_traits<T>::get(item);
-                }
+                unchecked_addition_protocol(item);
 
                 dequeue.emplace_front(std::move(item));
             }
@@ -327,11 +285,9 @@ class thread_safe_queue {
             }
 
             T item = std::move(dequeue.front());
-
-            if (max_bytes != 0) {
-                current_bytes -= queue_size_traits<T>::get(item);
-            }
             
+            removal_protocol(item);
+           
             dequeue.pop_front();
 
             return item;
@@ -351,9 +307,7 @@ class thread_safe_queue {
 
             T item = std::move(dequeue.back());
 
-            if (max_bytes != 0) {
-                current_bytes -= queue_size_traits<T>::get(item);
-            }
+            removal_protocol(item);
 
             dequeue.pop_back();
 
@@ -379,10 +333,8 @@ class thread_safe_queue {
 
             T item = std::move(dequeue.front());
 
-            if (max_bytes != 0) {
-                current_bytes -= queue_size_traits<T>::get(item);
-            }
-            
+            removal_protocol(item);
+
             dequeue.pop_front();
 
             return item;
@@ -433,5 +385,63 @@ class thread_safe_queue {
                 dequeue.push_back(item);
                 current_bytes += queue_size_traits<T>::get(item);
             }
+        }
+    
+    protected:
+        /**
+         * @brief returns false if the queue is stopped or if the addition will cause a size overflow. If not, adds the item size to the counter (if counting) and returns true.
+         * Call before adding items to the queue to check if can be added
+         * @param item_bytes the byte size of the item
+         * @return if the addition is allowed
+         */
+        inline bool pre_addition_check_protocol(T& item) {
+            if (stopped) {
+                return false;
+            }
+
+            if constexpr (EnableMaxSize) {
+                if (max_size != 0 && (dequeue.size() >= max_size)) {
+                    return false;
+                }
+            }
+            
+            if constexpr (EnableMaxBytes) {
+                if (max_bytes != 0) {
+                    const size_t bytes = queue_size_traits<T>::get(item);
+
+                    if ((current_bytes > max_bytes) || (bytes > max_bytes - current_bytes)) {
+                        return false;
+                    }
+
+                    current_bytes += bytes;
+                }
+            }
+            
+            return true;
+        }
+
+        /**
+         * @brief adds the item size to the counter
+         * Call when adding an item to the queue without checks
+         */
+        inline void unchecked_addition_protocol(T& item) {
+            if constexpr(EnableMaxBytes) {
+                if (max_bytes != 0) {
+                    current_bytes += queue_size_traits<T>::get(item);
+                }
+            }
+        }
+
+        /**
+         * @brief removes the item size from the counter (if counting)
+         * Call when removing item from the queue
+         */
+        inline void removal_protocol(T& item) {
+            if constexpr (EnableMaxBytes) {
+                if (max_bytes != 0) {
+                    current_bytes -= queue_size_traits<T>::get(item);
+                }
+            }
+            
         }
 };
