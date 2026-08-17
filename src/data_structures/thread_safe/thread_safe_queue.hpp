@@ -114,7 +114,7 @@ class thread_safe_queue {
                 if (max_bytes != 0) {
                     const size_t bytes = queue_size_traits<T>::get(item);
 
-                    if (bytes > max_bytes - current_bytes) {
+                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
                         return false;
                     }
 
@@ -144,7 +144,7 @@ class thread_safe_queue {
                 if (max_bytes != 0) {
                     const size_t bytes = queue_size_traits<T>::get(item);
 
-                    if (bytes > max_bytes - current_bytes) {
+                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
                         return false;
                     }
 
@@ -174,7 +174,7 @@ class thread_safe_queue {
                 if (max_bytes != 0) {
                     const size_t bytes = queue_size_traits<T>::get(item);
 
-                    if (bytes > max_bytes - current_bytes) {
+                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
                         return false;
                     }
 
@@ -205,7 +205,7 @@ class thread_safe_queue {
                 if (max_bytes != 0) {
                     const size_t bytes = queue_size_traits<T>::get(item);
 
-                    if (bytes > max_bytes - current_bytes) {
+                    if (current_bytes > max_bytes || bytes > max_bytes - current_bytes) {
                         return false;
                     }
 
