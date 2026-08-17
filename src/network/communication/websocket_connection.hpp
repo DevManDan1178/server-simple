@@ -92,7 +92,6 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
                 web_socket.close(boost::beast::websocket::close_code::normal, ec);
                 return;
             }
-            log_debug() << "Pushed packet in connection";
         }
 
         void write_message_async() {
@@ -104,7 +103,9 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
                 [this, self](boost::beast::error_code ec, std::size_t bytes_transferred) {
                     boost::ignore_unused(bytes_transferred);
                     if (ec) {
-                        std::cerr << "[web_socket] Write error: " << ec.message() << "\n";
+                        if (ec != asio::error::operation_aborted && ec != websocket::error::closed) {
+                            std::cerr << "[web_socket] Write error: " << ec.message() << "\n";
+                        }                
                         return;
                     }
 
