@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <unordered_map>
 #include <string>
 #include <chrono>
@@ -8,6 +9,9 @@
 #include <thread>
 #include <atomic>
 
+
+constexpr double DEFAULT_RATE_LIMITER_CLEANUP_AFTER_IDLE_DURATION = 120; // seconds
+
 class rate_limiter {
     private:
         struct entry {
@@ -15,24 +19,26 @@ class rate_limiter {
             std::chrono::steady_clock::time_point last_refill;
         };
 
-        double max_tokens;
-        double refill_rate;
-
         std::unordered_map<std::string, entry> requests;
         std::mutex mutex;
 
         std::thread cleanup_thread;
         std::atomic<bool> stop{false};
 
-        void cleanup_loop() {
-            while (!stop.load()) {
-                std::this_thread::sleep_for(std::chrono::minutes(1));
-                cleanup();
-            }
-        }
+        std::mutex cleanup_mutex;
+        std::condition_variable cleanup_cv;
 
+        double max_tokens;
+        double refill_rate;
+
+        const double cleanup_after_idle_duration;
+    
     public:
-        rate_limiter(double max_tokens, double refill_rate) : max_tokens(max_tokens), refill_rate(refill_rate) {
+        rate_limiter(
+            double max_tokens, 
+            double refill_rate,
+            double cleanup_after_idle_duration = DEFAULT_RATE_LIMITER_CLEANUP_AFTER_IDLE_DURATION
+        ) : max_tokens(max_tokens), refill_rate(refill_rate), cleanup_after_idle_duration(cleanup_after_idle_duration) {
             if (max_tokens <= 0) {
                 throw std::invalid_argument("max_tokens of rate_limiter must be positive");
             }
@@ -48,7 +54,8 @@ class rate_limiter {
 
         ~rate_limiter() {
             stop = true;
-
+            cleanup_cv.notify_one();
+            
             if (cleanup_thread.joinable()) {
                 cleanup_thread.join();
             }
@@ -104,16 +111,33 @@ class rate_limiter {
 
             auto now = std::chrono::steady_clock::now();
 
-            auto expiry = std::chrono::duration<double>(max_tokens / refill_rate).count() * 2;
-
             for (auto it = requests.begin(); it != requests.end();) {
                 double idle = std::chrono::duration<double>(now - it->second.last_refill).count();
 
-                if (idle > expiry) {
+                if (idle > cleanup_after_idle_duration) {
                     it = requests.erase(it);
                 } else {
                     ++it;
                 }
+            }
+        }
+    private:
+        void cleanup_loop() {
+            std::unique_lock<std::mutex> lock(cleanup_mutex);
+
+            while (!stop.load()) {
+                if (cleanup_cv.wait_for(
+                        lock,
+                        std::chrono::minutes(1),
+                        [this] {
+                            return stop.load();
+                        })) {
+                    break;
+                }
+
+                lock.unlock();
+                cleanup();
+                lock.lock();
             }
         }
 };
