@@ -39,18 +39,12 @@ class leaderboard {
         using entry_ptr = entry_type*;
         using ptr_comparator = leaderboard_entry_ptr_comparator<T>;
 
-        const std::filesystem::path file_path;
-        
-
-        
-
         std::unordered_map<std::string,std::unique_ptr<entry_type>> entries;
-
-
         // Only stores pointers, does not own entries
         std::multiset<entry_ptr, ptr_comparator> ranking;
         
         std::uint64_t next_id = 0;
+        const std::filesystem::path file_path;
         const std::size_t max_size;
 
 
@@ -66,7 +60,7 @@ class leaderboard {
             const std::filesystem::path& file_path,       
             std::size_t max_size = DEFAULT_MAX_LEADERBOARD_SIZE,
             bool highest_first = true
-        ) : file_path(file_path), max_size(max_size), ranking(leaderboard_entry_ptr_comparator<T>{highest_first}) {
+        ) : ranking(leaderboard_entry_ptr_comparator<T>{highest_first}) , file_path(file_path), max_size(max_size){
             load();
         }
 

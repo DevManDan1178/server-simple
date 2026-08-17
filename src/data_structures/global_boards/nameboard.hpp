@@ -27,14 +27,12 @@ constexpr const std::string NAMEBOARDS_SUBDIRECTORY_NAME = "nameboards";
  * New unique names are appended at the end.
  */
 class nameboard {
-    private:
-        const std::filesystem::path file_path;
-        const std::size_t max_size;
-
+    private:  
         std::uint64_t next_id = 0;
-
         std::list<entry> entries;
         std::multiset<entry*, entry_ptr_comparator> ranking;
+        const std::filesystem::path file_path;
+        const std::size_t max_size;
 
     public:
         /**
@@ -46,7 +44,7 @@ class nameboard {
         explicit nameboard(
             const std::filesystem::path& file_path,
             std::size_t max_size = DEFAULT_MAX_NAMEBOARD_SIZE
-        ) : max_size(max_size), file_path(file_path) {
+        ) : file_path(file_path), max_size(max_size){
             load();
         }
 
@@ -65,7 +63,8 @@ class nameboard {
             entries.emplace_back(entry{
                 name,
                 now,
-                next_id++
+                next_id++,
+                {},
             });
 
             entry& e = entries.back();
@@ -273,7 +272,8 @@ class nameboard {
                     entries.emplace_back(entry{
                         item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
                         item.at(NAMEBOARD_TIMESTAMP_KEY).get<int64_t>(),
-                        next_id++
+                        next_id++,
+                        {},
                     });
 
                     entry& e = entries.back();
