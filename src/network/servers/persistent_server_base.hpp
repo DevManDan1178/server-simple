@@ -64,20 +64,17 @@ class persistent_server_base : public server_base {
         virtual void on_client_connected(boost::asio::ip::tcp::socket&) {
             log_debug() << "[SERVER] Client connected";
         }
-
+        
+        virtual void on_client_disconnected(boost::asio::ip::tcp::socket&) {
+            log_debug() << "[SERVER] Client disconnected";
+        }
+        
         void setup_client_connection(boost::asio::ip::tcp::socket& socket) {
             std::shared_ptr<websocket_session> session = std::make_shared<websocket_session>(std::move(socket), incoming_packets_queue);
             active_sessions.insert(session);
             session->start();
             on_client_connected(socket);
         }
-
-
-        virtual void on_client_disconnected(boost::asio::ip::tcp::socket&) {
-            log_debug() << "[SERVER] Client disconnected";
-        }
-        
-
         
         void broadcast(const std::string& message) {
             for (auto i_ptr = active_sessions.begin(); i_ptr != active_sessions.end(); ) {
