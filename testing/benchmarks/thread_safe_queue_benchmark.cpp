@@ -15,13 +15,18 @@
 #include <thread>
 #include <vector>
 
+
 namespace {
     using value_type = uint64_t;
     using clock_type = std::chrono::steady_clock;
 
     constexpr int DEFAULT_PRODUCERS = 4;
     constexpr int DEFAULT_CONSUMERS = 4;
-    constexpr uint64_t DEFAULT_OPERATIONS = 10'000'000;
+    constexpr uint64_t DEFAULT_OPERATIONS_COUNT = 100'000'000;
+
+    constexpr size_t max_items = 1'000'000;
+    constexpr size_t max_bytes = 1'000'000'000;
+    
 
     /*
     * Baseline implementation.
@@ -95,10 +100,7 @@ namespace {
     * Thread creation and startup are excluded.
     */
     template <typename Queue>
-    benchmark_result run_benchmark(int producer_count, int consumer_count, uint64_t total_operations)
-    {
-        Queue queue;
-
+    benchmark_result run_benchmark(Queue& queue, int producer_count, int consumer_count, uint64_t total_operations) {
         std::atomic<uint64_t> consumed{0};
         std::atomic<uint64_t> checksum{0};
 
@@ -261,16 +263,14 @@ namespace {
         return result;
     }
 
-    void print_comparison(const benchmark_result& baseline, const benchmark_result& thread_safe)
-    {
+    void print_comparison(
+        const benchmark_result& baseline,
+        const benchmark_result& no_limits,
+        const benchmark_result& max_bytes_only,
+        const benchmark_result& max_size_only,
+        const benchmark_result& max_size_and_bytes
+    ) {
         const double baseline_throughput = baseline.throughput();
-        const double thread_safe_throughput = thread_safe.throughput();
-
-        const double relative = baseline_throughput > 0.0 
-            ? thread_safe_throughput / baseline_throughput 
-            : 0.0;
-
-        const double difference = (relative - 1.0) * 100.0;
 
         std::cout << std::fixed << std::setprecision(2);
 
@@ -278,36 +278,40 @@ namespace {
 
         std::cout
             << std::left
-            << std::setw(28)
+            << std::setw(32)
             << "Implementation"
             << std::right
             << std::setw(18)
             << "Operations/sec"
+            << std::setw(14)
+            << "Relative"
             << '\n';
 
-        std::cout << std::string(46, '-') << '\n';
+        std::cout << std::string(64, '-') << '\n';
 
-        std::cout
-            << std::left
-            << std::setw(28)
-            << "std::deque + mutex"
-            << std::right
-            << std::setw(18)
-            << baseline_throughput
-            << '\n';
+        auto print_result = [&](const char* name, const benchmark_result& result) {
+            const double throughput = result.throughput();
+            const double relative =baseline_throughput > 0.0
+                ? throughput / baseline_throughput
+                : 0.0;
 
-        std::cout
-            << std::left
-            << std::setw(28)
-            << "thread_safe_queue"
-            << std::right
-            << std::setw(18)
-            << thread_safe_throughput
-            << '\n';
+            std::cout
+                << std::left
+                << std::setw(32)
+                << name
+                << std::right
+                << std::setw(18)
+                << throughput
+                << std::setw(13)
+                << relative
+                << "x\n";
+        };
 
-        std::cout << "\nRelative throughput: " << relative << "x\n";
-
-        std::cout << "Difference:          " << (difference >= 0.0 ? "+" : "") << difference << "%\n";
+        print_result("std::deque + mutex", baseline);
+        print_result("thread_safe_queue<false,false>", no_limits);
+        print_result("thread_safe_queue<false,true>", max_bytes_only);
+        print_result("thread_safe_queue<true,false>", max_size_only);
+        print_result("thread_safe_queue<true,true>", max_size_and_bytes);
     }
 
     void print_usage(const char* program) {
@@ -323,18 +327,17 @@ namespace {
             << DEFAULT_CONSUMERS
             << '\n'
             << "  operations: "
-            << DEFAULT_OPERATIONS
+            << DEFAULT_OPERATIONS_COUNT
             << "\n\n"
             << "Example:\n"
             << "  "
             << program
             << " 4 4 10000000\n";
     }
-
 } // namespace end
 
-int main(int argc, char* argv[])
-{
+
+int main(int argc, char* argv[]) {
     if (argc > 1 && std::string(argv[1]) == "--help") {
         print_usage(argv[0]);
         return 0;
@@ -342,7 +345,7 @@ int main(int argc, char* argv[])
 
     int producer_count = DEFAULT_PRODUCERS;
     int consumer_count = DEFAULT_CONSUMERS;
-    uint64_t total_operations = DEFAULT_OPERATIONS;
+    uint64_t total_operations = DEFAULT_OPERATIONS_COUNT;
 
     try {
         if (argc > 1) {
@@ -394,25 +397,31 @@ int main(int argc, char* argv[])
         << total_operations
         << "\n\n";
 
-    // Run the baseline first.
     std::cout << "Running std::deque + mutex...\n";
+    mutex_deque mutex_dq;
+    thread_safe_queue<value_type, false, false> no_limits_dq(max_items, max_bytes);
+    thread_safe_queue<value_type, false, true> max_bytes_only_dq(max_items, max_bytes);
+    thread_safe_queue<value_type, true, false> max_size_only_dq(max_items, max_bytes);
+    thread_safe_queue<value_type, true, true> max_size_and_bytes_dq(max_items, max_bytes);
+    const benchmark_result baseline = run_benchmark(mutex_dq, producer_count, consumer_count, total_operations);
+    
+    std::cout << "Running thread_safe_queue<false, false>...\n";
+    
+    const benchmark_result no_limits = run_benchmark(no_limits_dq, producer_count, consumer_count, total_operations);
+    
+    std::cout << "Running thread_safe_queue<false, true>...\n";
+    
+    const benchmark_result max_bytes_only = run_benchmark(max_bytes_only_dq, producer_count, consumer_count, total_operations);
+    
+    std::cout << "Running thread_safe_queue<true, false>...\n";
+    
+    const benchmark_result max_size_only = run_benchmark(max_size_only_dq, producer_count, consumer_count, total_operations);
 
-    const benchmark_result baseline =
-        run_benchmark<mutex_deque>(
-            producer_count,
-            consumer_count,
-            total_operations);
+    std::cout << "Running thread_safe_queue<true, true>...\n";
 
-    // Run the actual implementation.
-    std::cout << "Running thread_safe_queue...\n";
+    const benchmark_result max_size_and_bytes = run_benchmark(max_size_and_bytes_dq, producer_count, consumer_count, total_operations);
 
-    const benchmark_result thread_safe =
-        run_benchmark<thread_safe_queue<value_type>>(
-            producer_count,
-            consumer_count,
-            total_operations);
-
-    print_comparison(baseline, thread_safe);
+    print_comparison(baseline, no_limits, max_bytes_only, max_size_only, max_size_and_bytes);
 
     return 0;
 }
