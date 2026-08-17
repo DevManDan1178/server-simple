@@ -24,9 +24,7 @@ class persistent_server_base : public server_base {
         )   : 
             server_base(port), 
             fixed_delta_time(std::max(_fixed_delta_time, 0.0f)), 
-            incoming_packets_queue(max_incoming_packets, max_incoming_bytes, [](const incoming_packet& packet) {
-                return packet.payload.size();
-            }) {
+            incoming_packets_queue(max_incoming_packets, max_incoming_bytes) {
                 
             if (_fixed_delta_time < 0) {
                 std::cerr << "Attempt to set server delta time to negative number - defaulted to zero (no update)\n";

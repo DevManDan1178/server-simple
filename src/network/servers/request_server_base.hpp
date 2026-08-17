@@ -28,9 +28,7 @@ class request_server_base : public server_base {
             double ip_token_refill_rate = DEFAULT_IP_TOKEN_REFILL_RATE
         )   : 
             server_base(port), 
-            request_queue(max_pending_requests, max_request_bytes, [](const request_task& task) {
-                return task.request.body().size();
-            }), 
+            request_queue(max_pending_requests, max_request_bytes), 
             ip_rate_limiter(max_ip_rate_tokens, ip_token_refill_rate) {
 
             for(size_t i = 0; i < worker_count; i++) {
@@ -43,12 +41,14 @@ class request_server_base : public server_base {
             }
         }
 
-
+        virtual void launch() {
+            server_base::launch();
+            log_debug() << workers.size() << " worker threads";
+        }
 
         virtual ~request_server_base() {  
             try_stop();
         }
-
 
 
     protected:
