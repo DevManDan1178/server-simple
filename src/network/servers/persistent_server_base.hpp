@@ -55,6 +55,8 @@ class persistent_server_base : public server_base {
             }
         }
 
+        virtual ~persistent_server_base() {}
+
     protected:
         virtual void stop() {
             server_base::stop();

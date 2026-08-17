@@ -46,9 +46,7 @@ class request_server_base : public server_base {
             log_debug() << workers.size() << " worker threads";
         }
 
-        virtual ~request_server_base() {  
-            try_stop();
-        }
+        virtual ~request_server_base() {}
 
 
     protected:
