@@ -394,7 +394,7 @@ class thread_safe_queue {
          * @param item_bytes the byte size of the item
          * @return if the addition is allowed
          */
-        inline bool pre_addition_check_protocol(T& item) {
+        inline bool pre_addition_check_protocol(const T& item) {
             if (stopped) {
                 return false;
             }
@@ -424,7 +424,7 @@ class thread_safe_queue {
          * @brief adds the item size to the counter
          * Call when adding an item to the queue without checks
          */
-        inline void unchecked_addition_protocol(T& item) {
+        inline void unchecked_addition_protocol(const T& item) {
             if constexpr(EnableMaxBytes) {
                 if (max_bytes != 0) {
                     current_bytes += queue_size_traits<T>::get(item);
@@ -436,7 +436,7 @@ class thread_safe_queue {
          * @brief removes the item size from the counter (if counting)
          * Call when removing item from the queue
          */
-        inline void removal_protocol(T& item) {
+        inline void removal_protocol(const T& item) {
             if constexpr (EnableMaxBytes) {
                 if (max_bytes != 0) {
                     current_bytes -= queue_size_traits<T>::get(item);
