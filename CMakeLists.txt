@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Server
+project(server-simple
     VERSION 1.0
     LANGUAGES CXX
 )
@@ -9,15 +9,11 @@ project(Server
 # Options
 # ------------------------------------------------------------------------------
 
-option(SERVER_BUILD_TESTS
-    "Build tests"
-    OFF
-)
+option(SERVER_BUILD_TESTS "Build tests" OFF)
 
-option(SERVER_BUILD_BENCHMARKS
-    "Build benchmarks"
-    OFF
-)
+option(SERVER_BUILD_BENCHMARKS "Build benchmarks" OFF)
+
+option(DEBUG_MODE "Enable debug mode" OFF)
 
 # ------------------------------------------------------------------------------
 # C++ configuration
@@ -33,7 +29,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ------------------------------------------------------------------------------
 
 find_package(Boost REQUIRED)
-
 add_subdirectory(external/json)
 
 # ------------------------------------------------------------------------------
@@ -54,7 +49,6 @@ add_library(server INTERFACE)
 
 target_include_directories(server INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(server INTERFACE
@@ -67,7 +61,7 @@ target_compile_features(server INTERFACE
 )
 
 target_compile_definitions(server INTERFACE
-    DEBUG_MODE
+    $<$<CONFIG:Debug>:DEBUG_MODE>
 )
 
 # ------------------------------------------------------------------------------
