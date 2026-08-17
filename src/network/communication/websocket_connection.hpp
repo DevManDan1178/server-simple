@@ -103,7 +103,7 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
                 [this, self](boost::beast::error_code ec, std::size_t bytes_transferred) {
                     boost::ignore_unused(bytes_transferred);
                     if (ec) {
-                        if (ec != asio::error::operation_aborted && ec != websocket::error::closed) {
+                        if (ec !=  boost::asio::error::operation_aborted && ec != boost::beast::websocket::error::closed) {
                             std::cerr << "[web_socket] Write error: " << ec.message() << "\n";
                         }                
                         return;
