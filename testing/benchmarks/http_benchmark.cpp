@@ -177,7 +177,40 @@ void run_client(
     }
 }
 
+bool check_server_online(const benchmark_config& config) {
+    asio::io_context io;
+    tcp::resolver resolver(io);
+    beast::tcp_stream stream(io);
+    beast::error_code ec;
+
+    auto endpoints = resolver.resolve(config.host, config.port, ec);
+
+    if (ec) {
+        std::cerr << "[Benchmark] DNS/resolve failed: " << ec.message() << '\n';
+        return false;
+    }
+
+    stream.connect(endpoints, ec);
+
+    if (ec) {
+        std::cerr << "[Benchmark] Server is not reachable: " << ec.message() << '\n';
+        return false;
+    }
+
+    beast::error_code shutdown_ec;
+    stream.socket().shutdown(tcp::socket::shutdown_both, shutdown_ec);
+
+    std::cout << "[Benchmark] Server is online.\n";
+    return true;
+}
+
 benchmark_result run_benchmark(const benchmark_config& config, bool collect_latency) {
+    if (!check_server_online(config)) {
+        benchmark_result result;
+        result.failed = 1;
+        return result;
+    }
+
     std::vector<std::thread> clients;
     std::vector<client_result> results(static_cast<std::size_t>(config.connections));
 
