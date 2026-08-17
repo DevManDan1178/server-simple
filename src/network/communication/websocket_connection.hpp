@@ -15,6 +15,13 @@ struct incoming_packet {
     std::string payload;
 };
 
+template<>
+struct queue_size_traits<incoming_packet> {
+    static size_t get(const incoming_packet& packet) noexcept {
+        return packet.payload.size();
+    }
+};
+
 class websocket_session : public std::enable_shared_from_this<websocket_session> {
     private:    
 
