@@ -67,8 +67,11 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
             auto self = shared_from_this();
             web_socket.async_read(flat_buffer, [this, self](boost::beast::error_code ec, std::size_t bytes_transferred) {
                 if (ec) {
-                    if (ec != boost::beast::websocket::error::closed) {
-                        std::cerr << "[web_socket] Read error: " << ec.message() << "\n";
+                    if (ec != boost::beast::websocket::error::closed &&
+                        ec != boost::asio::error::eof &&
+                        ec != boost::asio::error::operation_aborted &&
+                        ec != boost::asio::error::connection_reset) {
+                        std::cerr << "[web_socket] Non-disconnect read error: " << ec.message() << "\n";
                     }
                     return; 
                 }
