@@ -1,5 +1,6 @@
 #include <future>
 #include <string>
+#include <limits>
 #include "network/servers/request_server_base.hpp" 
 
 class echo_server : public request_server_base {
@@ -57,8 +58,8 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-
-    echo_server server(port, worker_thread_count);
+    size_t max_size_t = std::numeric_limits<size_t>::max();
+    echo_server server(port, worker_thread_count, max_size_t, max_size_t, std::numeric_limits<double>::max());
     server.launch();
     
     std::promise<void> stay_alive;
