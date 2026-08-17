@@ -24,7 +24,14 @@ struct request_task {
     sequence_key sequence_id;
 };
 
-    class http_connection : public std::enable_shared_from_this<http_connection> {
+template<>
+struct queue_size_traits<request_task> {
+    static size_t get(const request_task& task) noexcept {
+        return task.request.body().size();
+    }
+};
+
+class http_connection : public std::enable_shared_from_this<http_connection> {
     private:
         boost::asio::ip::tcp::socket socket;
         boost::beast::flat_buffer buffer;
