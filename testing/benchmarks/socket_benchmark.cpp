@@ -74,7 +74,12 @@ bool parse_message(const std::string& message, uint64_t& message_id, uint64_t& t
     }
 }
 
-void run_client(const benchmark_config& config, std::chrono::steady_clock::time_point start_time, std::chrono::steady_clock::time_point end_time, client_result& result, bool sender, bool collect_latency) {
+void run_client(
+    const benchmark_config& config, 
+    std::chrono::steady_clock::time_point start_time, 
+    std::chrono::steady_clock::time_point end_time, 
+    client_result& result, bool sender, bool collect_latency
+) {
     try {
         asio::io_context io;
         tcp::resolver resolver(io);
@@ -243,6 +248,7 @@ void run_client(const benchmark_config& config, std::chrono::steady_clock::time_
 
         beast::error_code close_ec;
         stream.next_layer().close(close_ec);
+        
     } catch (const std::exception& e) {
         ++result.failed;
         std::lock_guard lock(error_mutex);
