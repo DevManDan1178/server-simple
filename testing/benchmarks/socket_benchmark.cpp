@@ -136,7 +136,12 @@ void run_client(const benchmark_config& config, std::chrono::steady_clock::time_
                 stream.read(buffer, read_ec);
 
                 if (read_ec) {
-                    if (receiving && read_ec != websocket::error::closed && read_ec != asio::error::operation_aborted) {
+                    if (receiving &&
+                        read_ec != websocket::error::closed &&
+                        read_ec != asio::error::operation_aborted &&
+                        read_ec != asio::error::eof &&
+                        read_ec != asio::error::connection_reset) {
+
                         ++result.failed;
 
                         std::lock_guard lock(error_mutex);
@@ -223,6 +228,8 @@ void run_client(const benchmark_config& config, std::chrono::steady_clock::time_
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         receiving = false;
+
+       receiving = false;
 
         beast::error_code cancel_ec;
         stream.next_layer().cancel(cancel_ec);
