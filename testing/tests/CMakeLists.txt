@@ -14,6 +14,15 @@ target_compile_features(server_tests PRIVATE
     cxx_std_20
 )
 
+target_compile_options(server_tests PRIVATE
+    -fsanitize=address
+    -fno-omit-frame-pointer
+)
+
+target_link_options(server_tests PRIVATE
+    -fsanitize=address
+)
+
 include(GoogleTest)
 
 gtest_discover_tests(server_tests)
