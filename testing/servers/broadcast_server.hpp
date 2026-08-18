@@ -11,8 +11,6 @@ class broadcast_server : public persistent_server_base {
         broadcast_server(unsigned short port)
             : persistent_server_base(port, 1.0f / 60.0f) {}
 
-        
-
         void update() override {
             while (!incoming_packets_queue.empty()) {
                 incoming_packet packet = incoming_packets_queue.pop_front();
