@@ -68,6 +68,10 @@ target_compile_definitions(server INTERFACE
 # Testing / Benchmarking
 # ------------------------------------------------------------------------------
 
+if(SERVER_BUILD_TESTS)
+    enable_testing()
+endif()
+
 if(SERVER_BUILD_TESTS OR SERVER_BUILD_BENCHMARKS)
     add_subdirectory(testing)
 endif()
