@@ -4,6 +4,7 @@
 #include <string_view>
 #include <string>
 #include <algorithm>
+#include <thread>
 
 constexpr const float DEFAULT_FIXED_DELTA_TIME = 1.0f; // /60.0f;
 constexpr const size_t DEFAULT_MAX_INCOMING_PACKETS = 128 * 1024;
@@ -13,8 +14,10 @@ constexpr const size_t DEFAULT_MAX_INCOMING_BYTES = 64 * 1024 * 1024;
 class persistent_server_base : public server_base {
     protected:
         std::unordered_set<std::shared_ptr<websocket_session>> active_sessions;
+        std::thread update_loop_thread;
         const float fixed_delta_time;
         thread_safe_queue<incoming_packet> incoming_packets_queue;
+
     public:
         persistent_server_base(
             unsigned short port, 
@@ -37,22 +40,24 @@ class persistent_server_base : public server_base {
             if (fixed_delta_time <= 0) {
                 return;
             }
-            // Calculate frame duration threshold in milliseconds
-            const auto frame_duration = std::chrono::duration<float>(fixed_delta_time);
+            
+            update_loop_thread = std::thread([this]() {
+                const auto frame_duration = std::chrono::duration<float>(fixed_delta_time);
 
-            while (is_running()) {
-                auto frame_start = std::chrono::steady_clock::now();
+                while (is_running()) {
+                    auto frame_start = std::chrono::steady_clock::now();
 
-                update();
+                    update();
 
-                // Maintain fixed delta time sleep
-                auto frame_end = std::chrono::steady_clock::now();
-                auto elapsed = frame_end - frame_start;
+                    // Maintain fixed delta time sleep
+                    auto frame_end = std::chrono::steady_clock::now();
+                    auto elapsed = frame_end - frame_start;
 
-                if (elapsed < frame_duration) {
-                    std::this_thread::sleep_for(frame_duration - elapsed);
+                    if (elapsed < frame_duration) {
+                        std::this_thread::sleep_for(frame_duration - elapsed);
+                    }
                 }
-            }
+            });
         }
 
         virtual ~persistent_server_base() {}
@@ -61,6 +66,9 @@ class persistent_server_base : public server_base {
         virtual void stop() {
             server_base::stop();
             incoming_packets_queue.stop();
+            if (update_loop_thread.joinable()) {
+                update_loop_thread.join();
+            }
         }
 
         virtual void on_client_connected(boost::asio::ip::tcp::socket&) {
@@ -90,11 +98,7 @@ class persistent_server_base : public server_base {
         }
         
         
-        virtual void update() {
-
-        }
-
-
+        virtual void update() {}
 
         void send(std::shared_ptr<boost::asio::ip::tcp::socket>, 
             std::shared_ptr<boost::beast::flat_buffer>,
