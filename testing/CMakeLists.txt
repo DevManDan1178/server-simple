@@ -14,7 +14,6 @@ if(SERVER_BUILD_TESTS)
     FetchContent_MakeAvailable(googletest)
 
     add_subdirectory(tests)
-    add_subdirectory(servers)
 endif()
 
 if(SERVER_BUILD_BENCHMARKS)
