@@ -1,12 +1,22 @@
+include(FetchContent)
+
 if(SERVER_BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(servers)
-    target_include_directories(server INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/testing
+    # GoogleTest
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
     )
+
+    # Prevent GoogleTest from overriding the parent project's compiler/runtime
+    # settings on Windows.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(googletest)
+
+    add_subdirectory(tests)
+    add_subdirectory(servers)
 endif()
 
 if(SERVER_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
-
