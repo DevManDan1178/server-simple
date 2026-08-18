@@ -223,11 +223,14 @@ class nameboard {
 
          /**
          * @brief Saves the board to disk.
+         * Creates a temporary .tmp file to write all the data
+         * After successfully writing, replaces the original file with the new data
          * @return True if saved successfully.
          */
         bool save() const {
+            const std::string temp_path = std::string(file_path) + ".tmp";
             try {
-                 json j = json::array();
+                json j = json::array();
 
                 for (const auto* e : ranking) {
                     j.push_back({
@@ -236,58 +239,91 @@ class nameboard {
                     });
                 }
 
-                std::ofstream out(file_path);
+                {
+                    std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
 
-                if (!out) {
-                    return false;
+                    if (!out) {
+                        return false;
+                    }
+
+                    out << j.dump(4);
+
+                    out.flush();
+
+                    if (!out) {
+                        return false;
+                    }
                 }
-                    
-                out << j.dump(4);
+
+                std::filesystem::rename(temp_path, file_path);
+
+                return true;
             } catch (...) {
+                std::error_code ec;
+                std::filesystem::remove(temp_path, ec);
                 return false;
             }
-            return true;
         }
-
 
     private:
 
         /**
          * @brief Loads entries from disk.
+         * Creates temporary new values to write into
+         * Once the write is completed successfully, replaces the data with the values in the temporary data
          * @return True if loaded successfully.
          */
         bool load() {
             try {
-                std::ifstream in(file_path);
+                std::ifstream in(file_path, std::ios::binary);
 
                 if (!in) {
                     return false;
-                }    
+                }
 
                 json j;
                 in >> j;
 
-                entries.clear();
-                ranking.clear();
-                next_id = 0;
+                if (!j.is_array()) {
+                    return false;
+                }
 
+                std::list<entry> new_entries;
+                std::multiset<entry*, entry_ptr_comparator> new_ranking;
+
+                std::uint64_t new_next_id = 0;
+
+                std::size_t item_count = 0;
                 for (const auto& item : j) {
-                    entries.emplace_back(entry{
+                    if (++item_count > max_size) {
+                        break;
+                    }
+
+                    if (!item.is_object()) {
+                        return false;
+                    }
+
+                    new_entries.emplace_back(entry{
                         item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
                         item.at(NAMEBOARD_TIMESTAMP_KEY).get<int64_t>(),
-                        next_id++,
+                        new_next_id++,
                         {},
                     });
 
-                    entry& e = entries.back();
+                    entry& e = new_entries.back();
 
-                    auto rank_it = ranking.insert(&e);
+                    auto rank_it = new_ranking.insert(&e);
                     e.position = rank_it;
                 }
+
+                entries = std::move(new_entries);
+                ranking = std::move(new_ranking);
+                next_id = new_next_id;
+
+                return true;
+
             } catch (...) {
                 return false;
             }
-        
-            return true;
         }
 };
