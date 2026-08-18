@@ -32,12 +32,9 @@ class request_server_base : public server_base {
             ip_rate_limiter(max_ip_rate_tokens, ip_token_refill_rate) {
 
             for(size_t i = 0; i < worker_count; i++) {
-                workers.emplace_back(
-                    [this]()
-                    {
-                        worker_loop();
-                    }
-                );
+                workers.emplace_back([this](){
+                    worker_loop();
+                });
             }
         }
 
@@ -64,7 +61,6 @@ class request_server_base : public server_base {
 
             auto socket = std::make_shared<boost::asio::ip::tcp::socket>(asio_context);
             
-
             asio_acceptor.async_accept(
                 *socket,
                 [this,socket](boost::system::error_code ec) {
@@ -81,8 +77,7 @@ class request_server_base : public server_base {
                         return;
                     }
 
-                    std::make_shared<http_connection>(std::move(*socket), request_queue)
-                    ->start();
+                    std::make_shared<http_connection>(std::move(*socket), request_queue)->start();
                     start_accept_async();
                 }
             );
