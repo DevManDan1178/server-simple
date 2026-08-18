@@ -226,77 +226,119 @@ class leaderboard {
             return result;
         }
 
-
-
-
-        /**
-         * @brief Saves leaderboard data to JSON.
-         */
-        bool save() const {
-            try {
-                std::ofstream out(file_path);
-        
-                if (!out) {
-                    return false;
-                }
-                
-                json j = json::array();
-
-                for (auto ptr : ranking){
-                    j.push_back({
-                        {LEADERBOARD_NAME_KEY, ptr->name},
-                        {LEADERBOARD_SCORE_KEY,ptr->score},
-                        {LEADERBOARD_TIMESTAMP_KEY,ptr->timestamp},
-                    });
-                }       
-                    
-                out << j.dump(4);
-
-            }
-            catch (...) {
-                return false;
-            }
-            return true;
-        }
-
-
         size_t size() {
             return ranking.size();
         }
+
+        /**
+         * @brief Saves leaderboard data to disk
+         * Creates a temporary .tmp file to write all the data
+         * After successfully writing, replaces the original file with the new data
+         * @return true if saved successfully
+         */
+        bool save() const {
+            const std::string temp_path = std::string(file_path) + ".tmp";
+            try {
+                json j = json::array();
+
+                for (auto ptr : ranking) {
+                    j.push_back({
+                        {LEADERBOARD_NAME_KEY, ptr->name},
+                        {LEADERBOARD_SCORE_KEY, ptr->score},
+                        {LEADERBOARD_TIMESTAMP_KEY, ptr->timestamp},
+                    });
+                }
+
+                {
+                    std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
+
+                    if (!out) {
+                        return false;
+                    }
+
+                    out << j.dump(4);
+                    out.flush();
+
+                    if (!out) {
+                        return false;
+                    }
+                }
+
+                std::filesystem::rename(temp_path, file_path);
+
+                return true;
+            }
+            catch (...) {
+                std::error_code ec;
+                std::filesystem::remove(temp_path, ec);
+                return false;
+            }
+        }
+
     private:
 
         /**
-         * @brief Saves leaderboard data to JSON.
+         * @brief Loads entries from disk.
+         * Creates temporary new values to write into
+         * Once the write is completed successfully, replaces the data with the values in the temporary data
+         * @return true if loaded successfully
          */
         bool load() {
             try {
-                std::ifstream in(file_path);
+                std::ifstream in(file_path, std::ios::binary);
+
                 if (!in) {
                     return false;
                 }
 
                 json j;
-
                 in >> j;
 
-                for (const auto& item : j) {
+                if (!j.is_array()) {
+                    return false;
+                }
+
+                std::unordered_map<std::string, std::unique_ptr<entry_type>> new_entries;
+                std::multiset<entry_ptr, ptr_comparator> new_ranking;
+                std::int64_t new_next_id = next_id;
+
+                std::size_t item_count = 0;
+                for (const auto& item : j) {     
+                    if (++item_count > max_size) {
+                        break;
+                    }
+
+                    if (!item.is_object()) {
+                        return false;
+                    }
+
                     auto entry = std::make_unique<entry_type>();
                     entry->name = item.at(LEADERBOARD_NAME_KEY).get<std::string>();
                     entry->score = item.at(LEADERBOARD_SCORE_KEY).get<T>();
                     entry->timestamp = item.at(LEADERBOARD_TIMESTAMP_KEY).get<std::int64_t>();
-                    entry->id = next_id++;
+                    entry->id = new_next_id++;
+
                     entry_ptr raw = entry.get();
-                    auto ranking_it = ranking.insert(raw);
+
+                    auto ranking_it = new_ranking.insert(raw);
                     raw->ranking_position = ranking_it;
-                    entries.emplace(raw->name,std::move(entry));
+
+                    auto [it, inserted] =  new_entries.emplace(raw->name, std::move(entry));
+
+                    if (!inserted) {
+                        return false;
+                    }
                 }
+
+                entries = std::move(new_entries);
+                ranking = std::move(new_ranking);
+                next_id = new_next_id;
+
+                return true;
             }
             catch (...) {
                 return false;
             }
-
-
-            return true;
         }
 
 

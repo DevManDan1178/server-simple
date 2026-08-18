@@ -2,8 +2,8 @@
 
 #include "storage/file_helper.hpp"
 #include "data_structures/global_boards/entry.hpp"
-#include "data_structures/thread_safe/thread_safe_queue.hpp"
 
+#include <deque>
 #include <optional>
 #include <chrono>
 #include <fstream>
@@ -39,8 +39,7 @@ class score_stream {
         const std::size_t max_size;
 
         std::uint64_t next_id = 0;
-
-        thread_safe_queue<score_stream_entry<T>> entries;
+        std::deque<score_stream_entry<T>> entries;
 
 
     public:
@@ -48,10 +47,7 @@ class score_stream {
         explicit score_stream(
             const std::filesystem::path& file_path,
             std::size_t max_size = DEFAULT_MAX_SCORE_STREAM_SIZE
-        )
-            : file_path(file_path),
-            max_size(max_size)
-        {
+        ) : file_path(file_path), max_size(max_size) {
             load();
         }
 
@@ -59,10 +55,7 @@ class score_stream {
         /**
          * @brief Appends a new score to the front of the stream.
          */
-        void submit_score(
-            const std::string& name,
-            T score
-        ) {
+        void submit_score(const std::string& name, T score) {
             auto now = static_cast<std::int64_t>(
                 std::chrono::system_clock::to_time_t(
                     std::chrono::system_clock::now()
@@ -87,21 +80,15 @@ class score_stream {
         /**
          * @brief Gets all entries in stream order.
          */
-        std::vector<score_stream_entry<T>> get_all() const
-        {
-            return entries.to_vector();
+        std::vector<score_stream_entry<T>> get_all() const {
+            return std::vector<score_stream_entry<T>>(entries.begin(),entries.end());
         }
-
-
 
         /**
          * @brief Gets first entries.
          */
-        std::vector<score_stream_entry<T>> get_from_first(
-            std::size_t amount
-        ) const
-        {
-            auto all = entries.to_vector();
+        std::vector<score_stream_entry<T>> get_from_first(std::size_t amount) const {
+            auto all = get_all();
 
             if (amount < all.size()) {
                 all.resize(amount);
@@ -116,7 +103,7 @@ class score_stream {
          * @brief Gets entries in range from the start (newest).
          */
         std::vector<score_stream_entry<T>> get_in_range_from_top(std::size_t start, std::size_t end) const {
-            auto all = entries.to_vector();
+            auto all = get_all();
 
             if (start >= all.size() || start >= end) {
                 return {};
@@ -135,11 +122,8 @@ class score_stream {
         /**
          * @brief Gets entries in range from the bottom (oldest).
          */
-        std::vector<score_stream_entry<T>> get_in_range_from_bottom(
-            std::size_t start,
-            std::size_t end
-        ) const {
-            auto all = entries.to_vector();
+        std::vector<score_stream_entry<T>> get_in_range_from_bottom(std::size_t start, std::size_t end) const {
+            auto all = get_all();
 
             if (start >= all.size() || start >= end) {
                 return {};
@@ -160,16 +144,24 @@ class score_stream {
             };
         }
 
+        size_t size() {
+            return entries.size();
+        }
+
+
         /**
-         * @brief Saves score stream data.
+         * @brief Saves score stream data to disk.
          * JSON save order is from least to most recent (highest) timestamp
+         * Creates a temporary .tmp file to write all the data
+         * After successfully writing, replaces the original file with the new data
+         * @return true if saved successfully
          */
-        bool save() const
-        {
+        bool save() const {
+            const std::string temp_path = std::string(file_path) + ".tmp";
             try {
                 json j = json::array();
 
-                for (const auto& entry : entries.to_vector() | std::views::reverse) {            
+                for (const auto& entry : get_all() | std::views::reverse) {
                     j.push_back({
                         {SCORE_STREAM_NAME_KEY, entry.name},
                         {SCORE_STREAM_SCORE_KEY, entry.score},
@@ -177,33 +169,40 @@ class score_stream {
                     });
                 }
 
+                {
+                    std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
 
-                std::ofstream out(file_path);
+                    if (!out) {
+                        return false;
+                    }
 
-                if (!out) {
-                    return false;
+                    out << j.dump(4);
+                    out.flush();
+
+                    if (!out) {
+                        return false;
+                    }
                 }
 
+                std::filesystem::rename(temp_path, file_path);
 
-                out << j.dump(4);
-
-            } catch (...) {
+                return true;
+            }
+            catch (...) {
+                std::error_code ec;
+                std::filesystem::remove(temp_path, ec);
                 return false;
             }
-
-
-            return true;
-        }
-
-        size_t size() {
-            return entries.size();
         }
 
     private:
 
         /**
-         * @brief Loads the score from data (or null)
+         * @brief Loads entries from disk
          * JSON saved order should be from least to most recent (highest) timestamp
+         * Creates temporary new values to write into
+         * Once the write is completed successfully, replaces the data with the values in the temporary data
+         * @return true if successfully loaded
          */
         bool load() {
             try {
@@ -218,32 +217,39 @@ class score_stream {
                 json j;
                 in >> j;
 
+                if (!j.is_array()) {
+                    return false;
+                }
 
-                entries.clear();
-                next_id = 0;
+                std::deque<score_stream_entry<T>> new_entries;
+                std:uint64_t new_next_id = 0;
 
-
+                std::size_t item_count = 0;
                 for (const auto& item : j) {
+                    if (++item_count > max_size) {
+                        break;
+                    }
+
+                    if (!item.is_object()) {
+                        return false;
+                    }
+
                     score_stream_entry<T> entry;
                     entry.name = item.at(SCORE_STREAM_NAME_KEY).get<std::string>();
                     entry.score = item.at(SCORE_STREAM_SCORE_KEY).get<T>();
                     entry.timestamp = item.at(SCORE_STREAM_TIMESTAMP_KEY).get<std::int64_t>();
-                    entry.id = next_id++;
+                    entry.id = new_next_id++;
                     
-                    entries.push_front(entry); 
+                    new_entries.push_front(entry); 
                 }
 
-
-                while (entries.size() > max_size) {
-                    entries.pop_back();
-                }
-
+                entries = std::move(new_entries);
+                next_id = new_next_id;
 
             } catch (...) {
                 return false;
             }
 
-
             return true;
         }
-    };
+};
