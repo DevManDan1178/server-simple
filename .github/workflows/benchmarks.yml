@@ -20,12 +20,16 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Fix Ubuntu mirror
+        run: |
+          sudo sed -i \
+            's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            /etc/apt/sources.list.d/ubuntu.sources
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake \
-            ninja-build \
             libboost-dev
 
       - name: Install compiler
@@ -40,6 +44,8 @@ jobs:
           cmake -S . -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DDEBUG_MODE=OFF \
+            -DSERVER_BUILD_TESTS=OFF \
             -DSERVER_BUILD_BENCHMARKS=ON
 
       - name: Build
