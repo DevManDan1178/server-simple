@@ -43,7 +43,6 @@ class request_server_base : public server_base {
 
         virtual void launch() {
             server_base::launch();
-            log_debug() << workers.size() << " worker threads";
         }
 
         virtual ~request_server_base() {}
