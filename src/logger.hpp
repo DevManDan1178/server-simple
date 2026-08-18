@@ -17,7 +17,7 @@ public:
 
     // Overload the << operator to accept any type (ints, strings, etc.)
     template <typename T>
-    const log_debug& operator<<(const T& val) const {
+    const log_debug& operator<<([[maybe_unused]]const T& val) const {
 #ifdef DEBUG_MODE
         std::cout << val;
 #endif
