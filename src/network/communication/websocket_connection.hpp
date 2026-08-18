@@ -108,6 +108,7 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
                     if (ec) {
                         if (ec != boost::asio::error::operation_aborted &&
                             ec != boost::beast::websocket::error::closed &&
+                            ec != boost::asio::error::broken_pipe &&
                             ec != boost::asio::error::connection_reset) {
                             std::cerr << "[web_socket] Non-disconnect write error: " << ec.message() << "\n";
                         }                
