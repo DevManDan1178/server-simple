@@ -17,8 +17,8 @@ public:
 
 protected:
     // Implement the request processing logic
-    virtual boost::beast::http::response<boost::beast::http::string_body> process_client_request([[maybe_unused]] const std::string client_ip, const boost_http_request request) override { 
-        // Example logic: Turn the request into uppercase and send it back
+    virtual boost::beast::http::response<boost::beast::http::string_body> process_client_request([[maybe_unused]] const std::string& client_ip, const boost_http_request& request) override { 
+        // Example logic: Turn the request into uppercase and send it back*
         std::string response = request.body();
         std::transform(response.begin(), response.end(), response.begin(), ::toupper);
         
