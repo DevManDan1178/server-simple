@@ -58,6 +58,9 @@ class nameboard {
          * @return Ranking position, or nullopt if the name already exists.
          */
         std::optional<std::size_t> add_name(const std::string& name) {
+            if (contains(name)) {
+                return std::nullopt;
+            }
             auto now = static_cast<int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 
             entries.emplace_back(entry{
