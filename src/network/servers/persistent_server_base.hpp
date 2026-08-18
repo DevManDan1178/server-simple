@@ -60,7 +60,9 @@ class persistent_server_base : public server_base {
             });
         }
 
-        virtual ~persistent_server_base() {}
+        virtual ~persistent_server_base() {
+            try_stop();
+        }
 
     protected:
         virtual void stop() {

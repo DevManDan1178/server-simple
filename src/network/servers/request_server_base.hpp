@@ -42,7 +42,9 @@ class request_server_base : public server_base {
             server_base::launch();
         }
 
-        virtual ~request_server_base() {}
+        virtual ~request_server_base() {
+            try_stop();
+        }
 
 
     protected:
