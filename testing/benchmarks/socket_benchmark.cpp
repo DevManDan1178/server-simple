@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <iostream>
 #include <mutex>
@@ -24,14 +25,15 @@ namespace {
 
 constexpr int DEFAULT_CONNECTIONS = 8;
 constexpr int DEFAULT_DURATION = 10;
-constexpr int DEFAULT_WARMUP = 2;
+constexpr int STARTUP_TIMEOUT_SECONDS = 10;
 
 struct benchmark_config {
     std::string host = "127.0.0.1";
     std::string port = "8080";
+
     int connections = DEFAULT_CONNECTIONS;
     int duration_seconds = DEFAULT_DURATION;
-    int warmup_seconds = DEFAULT_WARMUP;
+
     std::string body = "hello";
 };
 
@@ -39,7 +41,18 @@ struct client_result {
     uint64_t sent = 0;
     uint64_t received = 0;
     uint64_t failed = 0;
+
     latency_stats latency;
+};
+
+struct startup_state {
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    int ready_clients = 0;
+
+    bool failed = false;
+    bool start_measurement = false;
 };
 
 std::mutex error_mutex;
@@ -47,7 +60,9 @@ std::atomic<uint64_t> global_message_id{0};
 
 std::string make_message() {
     const uint64_t message_id = global_message_id.fetch_add(1, std::memory_order_relaxed);
-    const auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
 
     return std::to_string(message_id) + ":" + std::to_string(timestamp) + ":" + "hello";
 }
@@ -74,11 +89,23 @@ bool parse_message(const std::string& message, uint64_t& message_id, uint64_t& t
     }
 }
 
+void report_startup_failure(startup_state& startup) {
+    {
+        std::lock_guard lock(startup.mutex);
+        startup.failed = true;
+    }
+
+    startup.cv.notify_all();
+}
+
 void run_client(
-    const benchmark_config& config, 
-    std::chrono::steady_clock::time_point start_time, 
-    std::chrono::steady_clock::time_point end_time, 
-    client_result& result, bool sender, bool collect_latency
+    const benchmark_config& config,
+    startup_state& startup,
+    std::chrono::steady_clock::time_point start_time,
+    std::chrono::steady_clock::time_point end_time,
+    client_result& result,
+    bool sender,
+    bool collect_latency
 ) {
     try {
         asio::io_context io;
@@ -86,12 +113,18 @@ void run_client(
         websocket::stream<tcp::socket> stream(io);
 
         beast::error_code ec;
+
         auto endpoints = resolver.resolve(config.host, config.port, ec);
 
         if (ec) {
             ++result.failed;
-            std::lock_guard lock(error_mutex);
-            std::cerr << "[Client] Resolve failed: " << ec.message() << '\n';
+
+            {
+                std::lock_guard lock(error_mutex);
+                std::cerr << "[Client] Resolve failed: " << ec.message() << '\n';
+            }
+
+            report_startup_failure(startup);
             return;
         }
 
@@ -99,8 +132,13 @@ void run_client(
 
         if (ec) {
             ++result.failed;
-            std::lock_guard lock(error_mutex);
-            std::cerr << "[Client] Connection failed: " << ec.message() << '\n';
+
+            {
+                std::lock_guard lock(error_mutex);
+                std::cerr << "[Client] Connection failed: " << ec.message() << '\n';
+            }
+
+            report_startup_failure(startup);
             return;
         }
 
@@ -108,40 +146,31 @@ void run_client(
 
         if (ec) {
             ++result.failed;
-            std::lock_guard lock(error_mutex);
-            std::cerr << "[Client] WebSocket handshake failed: " << ec.message() << '\n';
+
+            {
+                std::lock_guard lock(error_mutex);
+                std::cerr << "[Client] WebSocket handshake failed: " << ec.message() << '\n';
+            }
+
+            report_startup_failure(startup);
             return;
         }
 
         stream.text(true);
 
-        /*
-         * Wait until all clients have had a chance to connect before
-         * starting the measurement.
-         */
-        while (std::chrono::steady_clock::now() < start_time) {
-            std::this_thread::yield();
-        }
-
         std::atomic<bool> receiving{true};
 
-        /*
-         * Every client continuously receives broadcasts.
-         *
-         * The sender also receives its own broadcast because this is
-         * a global broadcast.
-         */
         std::thread receiver([&]() {
             beast::flat_buffer buffer;
 
-            while (receiving) {
+            while (receiving.load(std::memory_order_relaxed)) {
                 buffer.clear();
 
                 beast::error_code read_ec;
                 stream.read(buffer, read_ec);
 
                 if (read_ec) {
-                    if (receiving &&
+                    if (receiving.load(std::memory_order_relaxed) &&
                         read_ec != websocket::error::closed &&
                         read_ec != asio::error::operation_aborted &&
                         read_ec != asio::error::eof &&
@@ -160,6 +189,7 @@ void run_client(
                 }
 
                 const std::string message = beast::buffers_to_string(buffer.data());
+
                 uint64_t message_id = 0;
                 uint64_t timestamp = 0;
 
@@ -191,50 +221,80 @@ void run_client(
             }
         });
 
-        /*
-         * Client 0 is the only sender in this benchmark.
-         *
-         * This gives us a simple global-chat workload:
-         *
-         *     1 incoming message
-         *             |
-         *             v
-         *     N connected clients
-         */
-        while (sender && std::chrono::steady_clock::now() < end_time) {
-            const std::string message = make_message();
-            beast::error_code write_ec;
-            stream.write(asio::buffer(message), write_ec);
-
-            if (write_ec) {
-                ++result.failed;
-
-                if (result.failed <= 5) {
-                    std::lock_guard lock(error_mutex);
-                    std::cerr << "[Client] Write failed: " << write_ec.message() << '\n';
-                }
-
-                break;
-            }
-
-            ++result.sent;
+        {
+            std::lock_guard lock(startup.mutex);
+            ++startup.ready_clients;
         }
 
-        /*
-         * Non-senders remain connected for the full duration so they
-         * continue receiving broadcasts.
-         */
-        if (!sender) {
+        startup.cv.notify_all();
+
+        {
+            std::unique_lock lock(startup.mutex);
+
+            startup.cv.wait(lock, [&startup]() {
+                return startup.start_measurement || startup.failed;
+            });
+        }
+
+        bool startup_failed = false;
+
+        {
+            std::lock_guard lock(startup.mutex);
+            startup_failed = startup.failed;
+        }
+
+        if (startup_failed) {
+            receiving.store(false, std::memory_order_relaxed);
+
+            beast::error_code cancel_ec;
+            stream.next_layer().cancel(cancel_ec);
+
+            if (receiver.joinable()) {
+                receiver.join();
+            }
+
+            beast::error_code shutdown_ec;
+            stream.next_layer().shutdown(tcp::socket::shutdown_both, shutdown_ec);
+
+            beast::error_code close_ec;
+            stream.next_layer().close(close_ec);
+
+            return;
+        }
+
+        while (std::chrono::steady_clock::now() < start_time) {
+            std::this_thread::yield();
+        }
+
+        if (sender) {
             while (std::chrono::steady_clock::now() < end_time) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                const std::string message = make_message();
+
+                beast::error_code write_ec;
+                stream.write(asio::buffer(message), write_ec);
+
+                if (write_ec) {
+                    ++result.failed;
+
+                    if (result.failed <= 5) {
+                        std::lock_guard lock(error_mutex);
+                        std::cerr << "[Client] Write failed: " << write_ec.message() << '\n';
+                    }
+
+                    break;
+                }
+
+                ++result.sent;
+            }
+        } else {
+            while (std::chrono::steady_clock::now() < end_time) {
+                std::this_thread::yield();
             }
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        receiving = false;
-
-       receiving = false;
+        receiving.store(false, std::memory_order_relaxed);
 
         beast::error_code cancel_ec;
         stream.next_layer().cancel(cancel_ec);
@@ -248,50 +308,103 @@ void run_client(
 
         beast::error_code close_ec;
         stream.next_layer().close(close_ec);
-
     } catch (const std::exception& e) {
         ++result.failed;
-        std::lock_guard lock(error_mutex);
-        std::cerr << "[Client] Exception: " << e.what() << '\n';
+
+        {
+            std::lock_guard lock(error_mutex);
+            std::cerr << "[Client] Exception: " << e.what() << '\n';
+        }
+
+        report_startup_failure(startup);
     }
 }
 
 benchmark_result run_benchmark(const benchmark_config& config, bool collect_latency) {
+    startup_state startup;
+
     std::vector<std::thread> clients;
     std::vector<client_result> results(static_cast<std::size_t>(config.connections));
 
     clients.reserve(static_cast<std::size_t>(config.connections));
 
-    /*
-     * Give all clients a small connection window.
-     *
-     * The measurement starts after this point.
-     */
-    const auto start = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
-    const auto end_time = start + std::chrono::seconds(config.duration_seconds);
+    const auto start_time = std::chrono::steady_clock::now();
+    const auto end_time = start_time + std::chrono::seconds(config.duration_seconds);
 
     for (int i = 0; i < config.connections; ++i) {
-        clients.emplace_back([&config, start, end_time, &results, i, collect_latency]() {
+        clients.emplace_back([
+            &config,
+            &startup,
+            start_time,
+            end_time,
+            &results,
+            i,
+            collect_latency
+        ]() {
             const bool sender = i == 0;
 
-            run_client(config, start, end_time, results[static_cast<std::size_t>(i)], sender, collect_latency);
+            run_client(
+                config,
+                startup,
+                start_time,
+                end_time,
+                results[static_cast<std::size_t>(i)],
+                sender,
+                collect_latency
+            );
         });
     }
 
+    bool startup_successful = false;
+
+    {
+        std::unique_lock lock(startup.mutex);
+
+        startup_successful = startup.cv.wait_for(
+            lock,
+            std::chrono::seconds(STARTUP_TIMEOUT_SECONDS),
+            [&startup, &config]() {
+                return startup.ready_clients == config.connections || startup.failed;
+            }
+        );
+
+        if (!startup_successful) {
+            startup.failed = true;
+
+            std::cerr
+                << "[Benchmark] Timed out waiting for "
+                << config.connections
+                << " clients. Only "
+                << startup.ready_clients
+                << " connected.\n";
+        }
+
+        if (startup.failed) {
+            startup_successful = false;
+        } else {
+            startup.start_measurement = true;
+        }
+    }
+
+    startup.cv.notify_all();
+
     for (auto& client : clients) {
-        client.join();
+        if (client.joinable()) {
+            client.join();
+        }
     }
 
     const auto end = std::chrono::steady_clock::now();
 
     benchmark_result result;
-    result.elapsed_seconds = std::chrono::duration<double>(end - start).count();
+
+    if (startup_successful) {
+        result.elapsed_seconds = std::chrono::duration<double>(end - start_time).count();
+    } else {
+        result.elapsed_seconds = 0.0;
+    }
 
     for (auto& client : results) {
-        /*
-         * For this benchmark, "completed" means successful broadcast
-         * deliveries rather than messages sent.
-         */
         result.completed += client.received;
         result.failed += client.failed;
 
@@ -302,6 +415,10 @@ benchmark_result run_benchmark(const benchmark_config& config, bool collect_late
 
     if (collect_latency) {
         result.latency.sort();
+    }
+
+    if (!startup_successful && result.failed == 0) {
+        result.failed = 1;
     }
 
     return result;
@@ -317,10 +434,11 @@ bool parse_int(const char* value, int& output) {
 }
 
 void print_usage(const char* program) {
-    std::cout << "Usage:\n"
-        << "  " << program << " [connections] [duration] [warmup]\n\n"
+    std::cout
+        << "Usage:\n"
+        << "  " << program << " [connections] [duration]\n\n"
         << "Example:\n"
-        << "  " << program << " 8 10 2\n";
+        << "  " << program << " 8 10\n";
 }
 
 } // namespace
@@ -344,25 +462,17 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (argc > 3) {
-        if (!parse_int(argv[3], config.warmup_seconds)) {
-            std::cerr << "Invalid warmup duration.\n";
-            print_usage(argv[0]);
-            return 1;
-        }
-    }
-
-    if (config.connections <= 0 || config.duration_seconds <= 0 || config.warmup_seconds < 0) {
+    if (config.connections <= 0 || config.duration_seconds <= 0) {
         std::cerr << "Connections and duration must be > 0.\n";
         return 1;
     }
 
-    std::cout << "server-simple Persistent Server Benchmark\n"
+    std::cout
+        << "server-simple Persistent Server Benchmark\n"
         << "===========================================\n"
         << "Host:        " << config.host << '\n'
         << "Port:        " << config.port << '\n'
         << "Connections: " << config.connections << '\n'
-        << "Warmup:      " << config.warmup_seconds << "s\n"
         << "Duration:    " << config.duration_seconds << "s\n"
         << '\n';
 
@@ -372,24 +482,15 @@ int main(int argc, char** argv) {
         server.launch();
     });
 
-    // Give the server time to begin accepting connections.
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    
-    if (config.warmup_seconds > 0) {
-        std::cout << "[Benchmark] Warming up...\n";
 
-        benchmark_config warmup_config = config;
-        warmup_config.duration_seconds = config.warmup_seconds;
-
-        run_benchmark(warmup_config, false);
-
-        std::cout << "[Benchmark] Warmup complete.\n\n";
-    }
-
-    std::cout << "[Benchmark] Running measurement...\n";
+    std::cout << "[Benchmark] Starting...\n";
 
     benchmark_result result = run_benchmark(config, true);
+
     print_result(result);
+
+    std::cout << "[Benchmark] Completed.\n";
 
     server.try_stop();
 
@@ -397,24 +498,12 @@ int main(int argc, char** argv) {
         server_thread.join();
     }
 
-    /*
-     * A single message is broadcast to every connected client.
-     * messages sent = result.completed / connections
-     * (assuming every broadcast was delivered)
-     */
-    const double messages_per_second = result.elapsed_seconds > 0.0
-        ? static_cast<double>(result.completed) / static_cast<double>(config.connections) / result.elapsed_seconds
-        : 0.0;
-
-    std::cout << "\nBroadcast\n"
-        << "---------\n"
-        << "Connections:     " << config.connections << '\n'
-        << "Deliveries:      " << result.completed << '\n'
-        << "Deliveries/sec:  " << result.throughput() << '\n'
-        << "Messages/sec:    " << messages_per_second << '\n';
-
     if (result.failed > 0) {
-        std::cout << "\nWARNING: benchmark encountered " << result.failed << " failed operations.\n";
+        std::cout
+            << "\nWARNING: benchmark encountered "
+            << result.failed
+            << " failed operations.\n";
+
         return 2;
     }
 

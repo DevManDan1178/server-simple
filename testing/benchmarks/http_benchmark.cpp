@@ -6,9 +6,10 @@
 #include "benchmark_common.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cctype>
+#include <cstdint>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -25,7 +26,7 @@ namespace {
 
 constexpr int DEFAULT_CONNECTIONS = 8;
 constexpr int DEFAULT_DURATION = 10;
-constexpr int DEFAULT_WARMUP = 2;
+constexpr int STARTUP_TIMEOUT_SECONDS = 10;
 
 struct benchmark_config {
     std::string host = "127.0.0.1";
@@ -34,7 +35,6 @@ struct benchmark_config {
 
     int connections = DEFAULT_CONNECTIONS;
     int duration_seconds = DEFAULT_DURATION;
-    int warmup_seconds = DEFAULT_WARMUP;
 
     std::string body = "hello";
 };
@@ -42,7 +42,18 @@ struct benchmark_config {
 struct client_result {
     uint64_t completed = 0;
     uint64_t failed = 0;
+
     latency_stats latency;
+};
+
+struct startup_state {
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    int ready_clients = 0;
+
+    bool failed = false;
+    bool start_measurement = false;
 };
 
 std::mutex error_mutex;
@@ -115,8 +126,19 @@ bool run_single_request(
     return true;
 }
 
+void report_startup_failure(startup_state& startup) {
+    {
+        std::lock_guard lock(startup.mutex);
+        startup.failed = true;
+    }
+
+    startup.cv.notify_all();
+}
+
 void run_client(
     const benchmark_config& config,
+    startup_state& startup,
+    std::chrono::steady_clock::time_point start_time,
     std::chrono::steady_clock::time_point end_time,
     client_result& result,
     bool collect_latency
@@ -125,16 +147,19 @@ void run_client(
         asio::io_context io;
         tcp::resolver resolver(io);
         beast::tcp_stream stream(io);
-        beast::error_code ec;
 
+        beast::error_code ec;
         auto endpoints = resolver.resolve(config.host, config.port, ec);
 
         if (ec) {
             ++result.failed;
 
-            std::lock_guard lock(error_mutex);
-            std::cerr << "[Client] Resolve failed: " << ec.message() << '\n';
+            {
+                std::lock_guard lock(error_mutex);
+                std::cerr << "[Client] Resolve failed: " << ec.message() << '\n';
+            }
 
+            report_startup_failure(startup);
             return;
         }
 
@@ -143,10 +168,45 @@ void run_client(
         if (ec) {
             ++result.failed;
 
-            std::lock_guard lock(error_mutex);
-            std::cerr << "[Client] Connection failed: " << ec.message() << '\n';
+            {
+                std::lock_guard lock(error_mutex);
+                std::cerr << "[Client] Connection failed: " << ec.message() << '\n';
+            }
 
+            report_startup_failure(startup);
             return;
+        }
+
+        {
+            std::lock_guard lock(startup.mutex);
+            ++startup.ready_clients;
+        }
+
+        startup.cv.notify_all();
+
+        {
+            std::unique_lock lock(startup.mutex);
+
+            startup.cv.wait(lock, [&startup]() {
+                return startup.start_measurement || startup.failed;
+            });
+        }
+
+        bool startup_failed = false;
+
+        {
+            std::lock_guard lock(startup.mutex);
+            startup_failed = startup.failed;
+        }
+
+        if (startup_failed) {
+            beast::error_code shutdown_ec;
+            stream.socket().shutdown(tcp::socket::shutdown_both, shutdown_ec);
+            return;
+        }
+
+        while (std::chrono::steady_clock::now() < start_time) {
+            std::this_thread::yield();
         }
 
         const std::string expected = uppercase(config.body);
@@ -154,12 +214,19 @@ void run_client(
         while (std::chrono::steady_clock::now() < end_time) {
             std::string error;
 
-            if (run_single_request(stream, config, expected, collect_latency ? &result.latency : nullptr, error)) {
+            const bool success = run_single_request(
+                stream,
+                config,
+                expected,
+                collect_latency ? &result.latency : nullptr,
+                error
+            );
+
+            if (success) {
                 ++result.completed;
             } else {
                 ++result.failed;
 
-                // Avoid spamming the terminal with too many errors.
                 if (result.failed <= 5) {
                     std::lock_guard lock(error_mutex);
                     std::cerr << "[Client] " << error << '\n';
@@ -169,49 +236,100 @@ void run_client(
             }
         }
 
-        stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        beast::error_code shutdown_ec;
+        stream.socket().shutdown(tcp::socket::shutdown_both, shutdown_ec);
     } catch (const std::exception& e) {
         ++result.failed;
 
-        std::lock_guard lock(error_mutex);
-        std::cerr << "[Client] Exception: " << e.what() << '\n';
+        {
+            std::lock_guard lock(error_mutex);
+            std::cerr << "[Client] Exception: " << e.what() << '\n';
+        }
+
+        report_startup_failure(startup);
     }
 }
 
 benchmark_result run_benchmark(const benchmark_config& config, bool collect_latency) {
+    startup_state startup;
+
     std::vector<std::thread> clients;
-    std::vector<client_result> results(
-        static_cast<std::size_t>(config.connections)
-    );
+    std::vector<client_result> results(static_cast<std::size_t>(config.connections));
 
     clients.reserve(static_cast<std::size_t>(config.connections));
 
-    const auto start = std::chrono::steady_clock::now();
-    const auto end_time = start + std::chrono::seconds(config.duration_seconds);
+    const auto start_time = std::chrono::steady_clock::now();
+    const auto end_time = start_time + std::chrono::seconds(config.duration_seconds);
 
     for (int i = 0; i < config.connections; ++i) {
-        clients.emplace_back(
-            [&config, end_time, &results, i, collect_latency]() {
-                run_client(
-                    config,
-                    end_time,
-                    results[static_cast<std::size_t>(i)],
-                    collect_latency
-                );
-            }
-        );
+        clients.emplace_back([
+            &config,
+            &startup,
+            start_time,
+            end_time,
+            &results,
+            i,
+            collect_latency
+        ]() {
+            run_client(
+                config,
+                startup,
+                start_time,
+                end_time,
+                results[static_cast<std::size_t>(i)],
+                collect_latency
+            );
+        });
     }
 
+    bool startup_successful = false;
+
+    {
+        std::unique_lock lock(startup.mutex);
+
+        startup_successful = startup.cv.wait_for(
+            lock,
+            std::chrono::seconds(STARTUP_TIMEOUT_SECONDS),
+            [&startup, &config]() {
+                return startup.ready_clients == config.connections || startup.failed;
+            }
+        );
+
+        if (!startup_successful) {
+            startup.failed = true;
+
+            std::cerr
+                << "[Benchmark] Timed out waiting for "
+                << config.connections
+                << " clients. Only "
+                << startup.ready_clients
+                << " connected.\n";
+        }
+
+        if (startup.failed) {
+            startup_successful = false;
+        } else {
+            startup.start_measurement = true;
+        }
+    }
+
+    startup.cv.notify_all();
+
     for (auto& client : clients) {
-        client.join();
+        if (client.joinable()) {
+            client.join();
+        }
     }
 
     const auto end = std::chrono::steady_clock::now();
 
     benchmark_result result;
 
-    result.elapsed_seconds =
-        std::chrono::duration<double>(end - start).count();
+    if (startup_successful) {
+        result.elapsed_seconds = std::chrono::duration<double>(end - start_time).count();
+    } else {
+        result.elapsed_seconds = 0.0;
+    }
 
     for (auto& client : results) {
         result.completed += client.completed;
@@ -224,6 +342,10 @@ benchmark_result run_benchmark(const benchmark_config& config, bool collect_late
 
     if (collect_latency) {
         result.latency.sort();
+    }
+
+    if (!startup_successful && result.failed == 0) {
+        result.failed = 1;
     }
 
     return result;
@@ -240,9 +362,9 @@ bool parse_int(const char* value, int& output) {
 
 void print_usage(const char* program) {
     std::cout << "Usage:\n"
-        << "  " << program << " [connections] [duration] [warmup]\n\n"
+        << "  " << program << " [connections] [duration]\n\n"
         << "Example:\n"
-        << "  " << program << " 8 10 2\n";
+        << "  " << program << " 8 10\n";
 }
 
 } // namespace
@@ -266,25 +388,17 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (argc > 3) {
-        if (!parse_int(argv[3], config.warmup_seconds)) {
-            std::cerr << "Invalid warmup duration.\n";
-            print_usage(argv[0]);
-            return 1;
-        }
-    }
-
-    if (config.connections <= 0 || config.duration_seconds <= 0 || config.warmup_seconds < 0) {
+    if (config.connections <= 0 || config.duration_seconds <= 0) {
         std::cerr << "Connections and duration must be > 0.\n";
         return 1;
     }
 
-    std::cout << "server-simple HTTP Benchmark\n"
+    std::cout
+        << "server-simple HTTP Benchmark\n"
         << "=============================\n"
         << "Host:        " << config.host << '\n'
         << "Port:        " << config.port << '\n'
         << "Connections: " << config.connections << '\n'
-        << "Warmup:      " << config.warmup_seconds << "s\n"
         << "Duration:    " << config.duration_seconds << "s\n"
         << '\n';
 
@@ -294,23 +408,15 @@ int main(int argc, char** argv) {
         server.launch();
     });
 
-    // Give the server time to begin accepting connections
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    
-    if (config.warmup_seconds > 0) {
-        std::cout << "[Benchmark] Warming up...\n";
 
-        benchmark_config warmup_config = config;
-        warmup_config.duration_seconds = config.warmup_seconds;
-
-        run_benchmark(warmup_config, false);
-
-        std::cout << "[Benchmark] Warmup complete.\n\n";
-    } 
-
-    std::cout << "[Benchmark] Running measurement...\n";
+    std::cout << "[Benchmark] Starting...\n";
 
     benchmark_result result = run_benchmark(config, true);
+
+    print_result(result);
+
+    std::cout << "[Benchmark] Completed.\n";
 
     server.try_stop();
 
@@ -318,10 +424,12 @@ int main(int argc, char** argv) {
         server_thread.join();
     }
 
-    print_result(result);
-
     if (result.failed > 0) {
-        std::cout << "\nWARNING: benchmark encountered " << result.failed << " failed requests.\n";
+        std::cout
+            << "\nWARNING: benchmark encountered "
+            << result.failed
+            << " failed requests.\n";
+
         return 2;
     }
 
