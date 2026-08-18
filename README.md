@@ -1108,30 +1108,3 @@ Current areas of focus include:
 
 The project should currently be considered an evolving library rather than a stable, long-term ABI/API commitment.
 
----
-
-# Contributing
-
-Contributions, bug reports, and suggestions are welcome.
-
-For changes:
-
-1. Fork the repository.
-2. Create a feature branch.
-3. Make the change.
-4. Add or update tests where appropriate.
-5. Build with warnings enabled.
-6. Run the test suite.
-7. Open a pull request describing the change and its motivation.
-
-For concurrency or networking changes, please describe:
-
-* Expected behaviour
-* Failure behaviour
-* Shutdown behaviour
-* Backpressure behaviour
-* Thread-safety assumptions
-* Any relevant performance considerations
-
-Small, focused changes are preferred over large refactors unless the refactor is clearly justified.
-
