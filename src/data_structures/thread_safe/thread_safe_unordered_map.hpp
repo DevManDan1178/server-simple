@@ -78,10 +78,7 @@ class thread_safe_unordered_map {
                 throw std::runtime_error("Key not found - thread_safe_map");
             }
 
-            return locked_value<V>(
-                std::move(lock),
-                &iterator->second
-            );
+            return locked_value<V>(std::move(lock), &iterator->second);
         }
 
         /**
@@ -178,6 +175,12 @@ class thread_safe_unordered_map {
             return value;
         }
 
+        /**
+         * @brief Invokes the provided function for every key-value pair in the map.
+         * The map is locked for the entire duration of this call, including while the callback is being executed. The callback receives the key and value as references.
+         * @warning Do not access the map or call any function that attempts to acquire `mutex_map` from within the callback, as this will result in a deadlock.
+         * @param function Function to invoke for each key-value pair.
+         */
         template<typename Function>
         void for_each(Function&& function) {
             std::scoped_lock lock(mutex_map);
