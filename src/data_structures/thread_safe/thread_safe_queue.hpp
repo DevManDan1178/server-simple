@@ -46,19 +46,19 @@ class thread_safe_queue {
         std::deque<T> dequeue;
         bool stopped = false;
 
-        const size_t max_size;
-        const size_t max_bytes;
+        const size_t maximum_size;
+        const size_t maximum_bytes;
 
         size_t current_bytes = 0;
     public:
         /**
          * @brief Creates an empty queue.
-         * @param max_size max size of the queue [0 for unlimited size]
-         * @param max_bytes max bytes of the queue [0 for unlimited size]
+         * @param maximum_size max size of the queue [0 for unlimited size]
+         * @param maximum_bytes max bytes of the queue [0 for unlimited size]
          * @param queue_size_traits<T>::get function used to determine the size of each item
          */
-        explicit thread_safe_queue(size_t max_size = 0, size_t max_bytes = 0) 
-        : max_size(max_size), max_bytes(max_bytes) {}
+        explicit thread_safe_queue(size_t maximum_size = 0, size_t maximum_bytes = 0) 
+        : maximum_size(maximum_size), maximum_bytes(maximum_bytes) {}
         
         /**
          * @brief Prevents copying of the queue.
@@ -264,6 +264,26 @@ class thread_safe_queue {
             std::scoped_lock lock(mutex_queue);
             return dequeue.size();
         }
+        
+        /**
+         * @return the max size if max size is enabled, 0 if there is no max size
+         */
+        size_t max_size() {
+            if constexpr (EnableMaxSize) {
+                return maximum_size;
+            }
+            return 0;
+        }
+
+        /**
+         * @return the max amount of bytes if max bytes is enabled, 0 if there is no max amount of bytes
+         */
+        size_t max_bytes() {
+            if constexpr (EnableMaxBytes) {
+                return maximum_bytes;
+            }
+            return 0;
+        }
 
         void clear() {
             std::scoped_lock lock(mutex_queue);
@@ -372,7 +392,7 @@ class thread_safe_queue {
 
         /**
          * @brief Replaces the queue contents.
-         *
+         * If the contents are longer than the current size, stops after the current size has been reached (from the start)
          * @param items New contents.
          */
         void replace(const std::vector<T>& items) {
@@ -381,9 +401,18 @@ class thread_safe_queue {
             dequeue.clear();
             current_bytes = 0;
 
+            size_t current_size = 0;
             for (const auto& item : items) {
                 dequeue.push_back(item);
-                current_bytes += queue_size_traits<T>::get(item);
+                if constexpr (EnableMaxBytes) {
+                    current_bytes += queue_size_traits<T>::get(item);  
+                }
+            
+                if constexpr (EnableMaxSize) {
+                    if ((maximum_size > 0) && (++current_size >= maximum_size)) {
+                        break;
+                    }
+                }
             }
         }
     
@@ -400,16 +429,16 @@ class thread_safe_queue {
             }
 
             if constexpr (EnableMaxSize) {
-                if (max_size != 0 && (dequeue.size() >= max_size)) {
+                if (maximum_size != 0 && (dequeue.size() >= maximum_size)) {
                     return false;
                 }
             }
             
             if constexpr (EnableMaxBytes) {
-                if (max_bytes != 0) {
+                if (maximum_bytes != 0) {
                     const size_t bytes = queue_size_traits<T>::get(item);
 
-                    if ((current_bytes > max_bytes) || (bytes > max_bytes - current_bytes)) {
+                    if ((current_bytes > maximum_bytes) || (bytes > maximum_bytes - current_bytes)) {
                         return false;
                     }
 
@@ -426,7 +455,7 @@ class thread_safe_queue {
          */
         inline void unchecked_addition_protocol(const T& item) {
             if constexpr(EnableMaxBytes) {
-                if (max_bytes != 0) {
+                if (maximum_bytes != 0) {
                     current_bytes += queue_size_traits<T>::get(item);
                 }
             }
@@ -438,7 +467,7 @@ class thread_safe_queue {
          */
         inline void removal_protocol(const T& item) {
             if constexpr (EnableMaxBytes) {
-                if (max_bytes != 0) {
+                if (maximum_bytes != 0) {
                     current_bytes -= queue_size_traits<T>::get(item);
                 }
             }
