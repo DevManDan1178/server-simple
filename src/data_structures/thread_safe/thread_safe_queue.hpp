@@ -39,7 +39,6 @@ template<
     bool EnableMaxBytes = true
 >
 class thread_safe_queue {
-    public:
     protected:
         mutable std::mutex mutex_queue;
         std::condition_variable waiting;
