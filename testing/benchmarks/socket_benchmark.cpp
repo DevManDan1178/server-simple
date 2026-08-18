@@ -5,6 +5,7 @@
 #include "../servers/broadcast_server.hpp"
 #include "benchmark_common.hpp"
 
+#include <semaphore>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -478,11 +479,13 @@ int main(int argc, char** argv) {
 
     broadcast_server server(static_cast<unsigned short>(std::stoi(config.port)));
 
-    std::thread server_thread([&server]() {
+    std::binary_semaphore started_signal(0);
+    std::thread server_thread([&server, &started_signal]() {
         server.launch();
+        started_signal.release();
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    started_signal.acquire();
 
     std::cout << "[Benchmark] Starting...\n";
 
