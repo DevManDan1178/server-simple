@@ -1,0 +1,52 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    strategy:
+      matrix:
+        compiler:
+          - gcc
+          - clang
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            libboost-dev
+
+      - name: Install compiler
+        if: matrix.compiler == 'clang'
+        run: sudo apt-get install -y clang
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.compiler == 'gcc' && 'gcc' || 'clang' }}
+          CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSERVER_BUILD_BENCHMARKS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run benchmarks
+        run: |
+          ./build/testing/benchmarks/http_benchmark
+          ./build/testing/benchmarks/tsq_benchmark
+          ./build/testing/benchmarks/sock_benchmark
