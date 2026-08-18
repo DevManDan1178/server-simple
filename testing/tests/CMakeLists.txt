@@ -6,7 +6,7 @@ add_executable(server_tests
 )
 
 target_link_libraries(server_tests PRIVATE
-    server
+    server-simple
     GTest::gtest_main
 )
 

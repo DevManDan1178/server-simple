@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(server-simple
+project(ServerSimple
     VERSION 1.0
     LANGUAGES CXX
 )
@@ -45,22 +45,22 @@ endif()
 # Server library
 # ------------------------------------------------------------------------------
 
-add_library(server INTERFACE)
+add_library(server-simple INTERFACE)
 
-target_include_directories(server INTERFACE
+target_include_directories(server-simple INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(server INTERFACE
+target_link_libraries(server-simple INTERFACE
     nlohmann_json::nlohmann_json
     Boost::boost
 )
 
-target_compile_features(server INTERFACE
+target_compile_features(server-simple INTERFACE
     cxx_std_20
 )
 
-target_compile_definitions(server INTERFACE
+target_compile_definitions(server-simple INTERFACE
     $<$<CONFIG:Debug>:DEBUG_MODE>
 )
 

@@ -6,7 +6,7 @@ add_executable(http_benchmark
 )
 
 target_link_libraries(http_benchmark PRIVATE
-    server
+    server-simple
     Boost::boost
 )
 
@@ -21,7 +21,7 @@ add_executable(tsq_benchmark
 )
 
 target_link_libraries(tsq_benchmark PRIVATE
-    server
+    server-simple
     Boost::boost
 )
 
@@ -35,7 +35,7 @@ add_executable(sock_benchmark
 )
 
 target_link_libraries(sock_benchmark PRIVATE
-    server
+    server-simple
     Boost::boost
 )
 
