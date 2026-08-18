@@ -248,7 +248,7 @@ void run_client(
 
         beast::error_code close_ec;
         stream.next_layer().close(close_ec);
-        
+
     } catch (const std::exception& e) {
         ++result.failed;
         std::lock_guard lock(error_mutex);
@@ -257,17 +257,6 @@ void run_client(
 }
 
 benchmark_result run_benchmark(const benchmark_config& config, bool collect_latency) {
-    broadcast_server server(static_cast<unsigned short>(std::stoi(config.port)));
-
-    std::thread server_thread([&server]() {
-        server.launch();
-    });
-
-    /*
-     * Give the server time to begin accepting connections.
-     */
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
     std::vector<std::thread> clients;
     std::vector<client_result> results(static_cast<std::size_t>(config.connections));
 
@@ -294,12 +283,6 @@ benchmark_result run_benchmark(const benchmark_config& config, bool collect_late
     }
 
     const auto end = std::chrono::steady_clock::now();
-
-    server.try_stop();
-
-    if (server_thread.joinable()) {
-        server_thread.join();
-    }
 
     benchmark_result result;
     result.elapsed_seconds = std::chrono::duration<double>(end - start).count();
@@ -383,11 +366,15 @@ int main(int argc, char** argv) {
         << "Duration:    " << config.duration_seconds << "s\n"
         << '\n';
 
-    /*
-     * Warmup
-     *
-     * This run is deliberately ignored.
-     */
+    broadcast_server server(static_cast<unsigned short>(std::stoi(config.port)));
+
+    std::thread server_thread([&server]() {
+        server.launch();
+    });
+
+    // Give the server time to begin accepting connections.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
     if (config.warmup_seconds > 0) {
         std::cout << "[Benchmark] Warming up...\n";
 
@@ -404,14 +391,16 @@ int main(int argc, char** argv) {
     benchmark_result result = run_benchmark(config, true);
     print_result(result);
 
+    server.try_stop();
+
+    if (server_thread.joinable()) {
+        server_thread.join();
+    }
+
     /*
      * A single message is broadcast to every connected client.
-     *
-     * Therefore:
-     *
-     *     messages sent = result.completed / connections
-     *
-     * approximately, assuming every broadcast was delivered.
+     * messages sent = result.completed / connections
+     * (assuming every broadcast was delivered)
      */
     const double messages_per_second = result.elapsed_seconds > 0.0
         ? static_cast<double>(result.completed) / static_cast<double>(config.connections) / result.elapsed_seconds

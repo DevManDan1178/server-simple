@@ -2,6 +2,7 @@
 #include <boost/beast.hpp>
 #include <boost/beast/http.hpp>
 
+#include "../servers/echo_server.hpp"
 #include "benchmark_common.hpp"
 
 #include <algorithm>
@@ -158,7 +159,7 @@ void run_client(
             } else {
                 ++result.failed;
 
-                // Don't spam the terminal with thousands of errors.
+                // Avoid spamming the terminal with too many errors.
                 if (result.failed <= 5) {
                     std::lock_guard lock(error_mutex);
                     std::cerr << "[Client] " << error << '\n';
@@ -177,42 +178,11 @@ void run_client(
     }
 }
 
-bool check_server_online(const benchmark_config& config) {
-    asio::io_context io;
-    tcp::resolver resolver(io);
-    beast::tcp_stream stream(io);
-    beast::error_code ec;
-
-    auto endpoints = resolver.resolve(config.host, config.port, ec);
-
-    if (ec) {
-        std::cerr << "[Benchmark] DNS/resolve failed: " << ec.message() << '\n';
-        return false;
-    }
-
-    stream.connect(endpoints, ec);
-
-    if (ec) {
-        std::cerr << "[Benchmark] Server is not reachable: " << ec.message() << '\n';
-        return false;
-    }
-
-    beast::error_code shutdown_ec;
-    stream.socket().shutdown(tcp::socket::shutdown_both, shutdown_ec);
-
-    std::cout << "[Benchmark] Server is online.\n";
-    return true;
-}
-
 benchmark_result run_benchmark(const benchmark_config& config, bool collect_latency) {
-    if (!check_server_online(config)) {
-        benchmark_result result;
-        result.failed = 1;
-        return result;
-    }
-
     std::vector<std::thread> clients;
-    std::vector<client_result> results(static_cast<std::size_t>(config.connections));
+    std::vector<client_result> results(
+        static_cast<std::size_t>(config.connections)
+    );
 
     clients.reserve(static_cast<std::size_t>(config.connections));
 
@@ -220,9 +190,16 @@ benchmark_result run_benchmark(const benchmark_config& config, bool collect_late
     const auto end_time = start + std::chrono::seconds(config.duration_seconds);
 
     for (int i = 0; i < config.connections; ++i) {
-        clients.emplace_back([&config, end_time, &results, i, collect_latency]() {
-            run_client(config, end_time, results[static_cast<std::size_t>(i)], collect_latency);
-        });
+        clients.emplace_back(
+            [&config, end_time, &results, i, collect_latency]() {
+                run_client(
+                    config,
+                    end_time,
+                    results[static_cast<std::size_t>(i)],
+                    collect_latency
+                );
+            }
+        );
     }
 
     for (auto& client : clients) {
@@ -232,7 +209,9 @@ benchmark_result run_benchmark(const benchmark_config& config, bool collect_late
     const auto end = std::chrono::steady_clock::now();
 
     benchmark_result result;
-    result.elapsed_seconds = std::chrono::duration<double>(end - start).count();
+
+    result.elapsed_seconds =
+        std::chrono::duration<double>(end - start).count();
 
     for (auto& client : results) {
         result.completed += client.completed;
@@ -309,11 +288,15 @@ int main(int argc, char** argv) {
         << "Duration:    " << config.duration_seconds << "s\n"
         << '\n';
 
-    /*
-     * Warmup
-     *
-     * This run is deliberately ignored.
-     */
+    echo_server server(static_cast<unsigned short>(std::stoi(config.port)));
+
+    std::thread server_thread([&server]() {
+        server.launch();
+    });
+
+    // Give the server time to begin accepting connections
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
     if (config.warmup_seconds > 0) {
         std::cout << "[Benchmark] Warming up...\n";
 
@@ -323,11 +306,17 @@ int main(int argc, char** argv) {
         run_benchmark(warmup_config, false);
 
         std::cout << "[Benchmark] Warmup complete.\n\n";
-    }
+    } 
 
     std::cout << "[Benchmark] Running measurement...\n";
 
     benchmark_result result = run_benchmark(config, true);
+
+    server.try_stop();
+
+    if (server_thread.joinable()) {
+        server_thread.join();
+    }
 
     print_result(result);
 
