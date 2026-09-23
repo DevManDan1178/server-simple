@@ -222,7 +222,7 @@ class score_stream {
                 }
 
                 std::deque<score_stream_entry<T>> new_entries;
-                std:uint64_t new_next_id = 0;
+                std::uint64_t new_next_id = 0;
 
                 std::size_t item_count = 0;
                 for (const auto& item : j) {
