@@ -11,6 +11,7 @@ constexpr const size_t DEFAULT_MAX_REQUEST_BYTES = 64 * 1024 * 1024;
 constexpr const double DEFAULT_MAX_IP_RATE_TOKENS = 50;
 constexpr const double DEFAULT_IP_TOKEN_REFILL_RATE = 0.5;
 
+// Server for simple fetch and post type requests
 class request_server_base : public server_base {
     protected:
         thread_safe_queue<request_task> request_queue;

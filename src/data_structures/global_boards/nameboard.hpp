@@ -1,17 +1,18 @@
 #pragma once
-#include "storage/file_helper.hpp"
-#include "data_structures/global_boards/entry.hpp"
-#include <algorithm>
-#include <fstream>
-#include <string>
 #include <stdint.h>
+
+#include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <list>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <set>
+#include <string>
 #include <vector>
-#include <list>
 
-#include <nlohmann/json.hpp>
+#include "data_structures/global_boards/entry.hpp"
+#include "storage/file_helper.hpp"
 
 using json = nlohmann::json;
 
@@ -23,307 +24,301 @@ constexpr const char* NAMEBOARD_TIMESTAMP_KEY = "timestamp";
 constexpr const std::string NAMEBOARDS_SUBDIRECTORY_NAME = "nameboards";
 /**
  * @class nameboard
- * @brief Stores and ranks unique names with optional persistence. 
+ * @brief Stores and ranks unique names with optional persistence.
  * New unique names are appended at the end.
  */
 class nameboard {
-    private:  
-        std::uint64_t next_id = 0;
-        std::list<entry> entries;
-        std::multiset<entry*, entry_ptr_comparator> ranking;
-        const std::filesystem::path file_path;
-        const std::size_t max_size;
+private:
+  std::uint64_t next_id = 0;
+  std::list<entry> entries;
+  std::multiset<entry*, entry_ptr_comparator> ranking;
+  const std::filesystem::path file_path;
+  const std::size_t max_size;
 
-    public:
-        /**
-         * @brief Creates a nameboard and loads existing data.
-         * @param parent_directory Directory used for storage.
-         * @param file_path Name of the JSON file.
-         * @param max_size Maximum number of entries.
-         */
-        explicit nameboard(
-            const std::filesystem::path& file_path,
-            std::size_t max_size = DEFAULT_MAX_NAMEBOARD_SIZE
-        ) : file_path(file_path), max_size(max_size){
-            load();
+public:
+  /**
+   * @brief Creates a nameboard and loads existing data.
+   * @param parent_directory Directory used for storage.
+   * @param file_path Name of the JSON file.
+   * @param max_size Maximum number of entries.
+   */
+  explicit nameboard(const std::filesystem::path& file_path,
+                     std::size_t max_size = DEFAULT_MAX_NAMEBOARD_SIZE)
+      : file_path(file_path), max_size(max_size) {
+    load();
+  }
+
+  size_t size() { return ranking.size(); }
+
+  /**
+   * @brief Adds a name to the board.
+   * @param name Name to add.
+   * @return Ranking position, or nullopt if the name already exists.
+   */
+  std::optional<std::size_t> add_name(const std::string& name) {
+    if (contains(name)) {
+      return std::nullopt;
+    }
+    auto now = static_cast<int64_t>(
+        std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+
+    entries.emplace_back(entry{
+        name,
+        now,
+        next_id++,
+        {},
+    });
+
+    entry& e = entries.back();
+
+    auto rank_it = ranking.insert(&e);
+    e.position = rank_it;
+
+    auto index = static_cast<size_t>(std::distance(ranking.begin(), rank_it));
+
+    if (ranking.size() > max_size) {
+      auto oldest = ranking.begin();
+      entry* oldest_entry = *oldest;
+
+      if (oldest == rank_it) {
+        ranking.erase(oldest);
+
+        for (auto it = entries.begin(); it != entries.end(); ++it) {
+          if (&*it == oldest_entry) {
+            entries.erase(it);
+            break;
+          }
         }
 
-        size_t size() {
-            return ranking.size();
+        return std::nullopt;
+      }
+
+      ranking.erase(oldest);
+
+      for (auto it = entries.begin(); it != entries.end(); ++it) {
+        if (&*it == oldest_entry) {
+          entries.erase(it);
+          break;
+        }
+      }
+    }
+
+    return index;
+  }
+
+  /**
+   * @brief Checks if a name exists.
+   * @param name Name to check.
+   * @return True if found.
+   */
+  bool contains(const std::string& name) const {
+    return std::any_of(
+      entries.begin(), 
+      entries.end(),
+      [&](const entry& e) { 
+        return e.name == name; 
+      }
+    );
+  }
+
+  /**
+   * @brief Gets all entries in ranking order.
+   * @return All stored entries.
+   */
+  std::vector<entry> get_all() const {
+    std::vector<entry> result;
+    result.reserve(ranking.size());
+
+    for (auto e : ranking) result.push_back(*e);
+
+    return result;
+  }
+
+  /**
+   * @brief Gets the first ranked entries.
+   * @param amount Number of entries to retrieve.
+   * @return Ranked entries.
+   */
+  std::vector<entry> get_from_first(size_t amount) const {
+    std::vector<entry> result;
+    result.reserve(std::min(amount, ranking.size()));
+
+    auto end = std::next(ranking.begin(), std::min(amount, ranking.size()));
+
+    for (auto it = ranking.begin(); it != end; ++it) {
+      result.push_back(**it);
+    }
+
+    return result;
+  }
+
+  /**
+   * @brief Gets the last ranked entries.
+   * @param amount Number of entries to retrieve.
+   * @return Ranked entries, last to first.
+   */
+  std::vector<entry> get_from_last(size_t amount) const {
+    std::vector<entry> result;
+    result.reserve(std::min(amount, ranking.size()));
+
+    auto end = std::next(ranking.rbegin(), std::min(amount, ranking.size()));
+
+    for (auto it = ranking.rbegin(); it != end; ++it) {
+      result.push_back(**it);
+    }
+
+    return result;
+  }
+
+  /**
+   * @brief Gets entries in a ranking range.
+   * @param start Starting index.
+   * @param end Ending index (exclusive).
+   * @return Entries in the specified range.
+   */
+  std::vector<entry> get_in_range_from_top(size_t start, size_t end) const {
+    if (start >= ranking.size() || start > end) {
+      return {};
+    }
+
+    auto first = std::next(ranking.begin(), start);
+    auto last = std::next(ranking.begin(), std::min(end, ranking.size()));
+
+    std::vector<entry> result;
+    result.reserve(std::distance(first, last));
+
+    for (auto it = first; it != last; ++it) {
+      result.push_back(**it);
+    }
+
+    return result;
+  }
+
+  /**
+   * @brief Gets entries in a ranking range counted from the bottom.
+   * @param start Starting index from the bottom.
+   * @param end Ending index from the bottom (exclusive).
+   * @return Entries in the specified range, bottom to top.
+   */
+  std::vector<entry> get_in_range_from_bottom(size_t start, size_t end) const {
+    if (start >= ranking.size() || start > end) {
+      return {};
+    }
+
+    auto first = std::next(ranking.rbegin(), start);
+    auto last = std::next(ranking.rbegin(), std::min(end, ranking.size()));
+
+    std::vector<entry> result;
+    result.reserve(std::distance(first, last));
+
+    for (auto it = first; it != last; ++it) {
+      result.push_back(**it);
+    }
+
+    return result;
+  }
+
+  /**
+   * @brief Saves the board to disk.
+   * Creates a temporary .tmp file to write all the data
+   * After successfully writing, replaces the original file with the new data
+   * @return True if saved successfully.
+   */
+  bool save() const {
+    const std::string temp_path = std::string(file_path) + ".tmp";
+    try {
+      json j = json::array();
+
+      for (const auto* e : ranking) {
+        j.push_back({{NAMEBOARD_NAME_KEY, e->name},
+                     {NAMEBOARD_TIMESTAMP_KEY, e->timestamp}});
+      }
+
+      {
+        std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
+
+        if (!out) {
+          return false;
         }
 
-        /**
-         * @brief Adds a name to the board.
-         * @param name Name to add.
-         * @return Ranking position, or nullopt if the name already exists.
-         */
-        std::optional<std::size_t> add_name(const std::string& name) {
-            if (contains(name)) {
-                return std::nullopt;
-            }
-            auto now = static_cast<int64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+        out << j.dump(4);
 
-            entries.emplace_back(entry{
-                name,
-                now,
-                next_id++,
-                {},
-            });
+        out.flush();
 
-            entry& e = entries.back();
+        if (!out) {
+          return false;
+        }
+      }
 
-            auto rank_it = ranking.insert(&e);
-            e.position = rank_it;
+      std::filesystem::rename(temp_path, file_path);
 
-            auto index = static_cast<size_t>(std::distance(ranking.begin(), rank_it));
+      return true;
+    } catch (...) {
+      std::error_code ec;
+      std::filesystem::remove(temp_path, ec);
+      return false;
+    }
+  }
 
-            if (ranking.size() > max_size) {
-                auto oldest = ranking.begin();
-                entry* oldest_entry = *oldest;
+private:
+  /**
+   * @brief Loads entries from disk.
+   * Creates temporary new values to write into
+   * Once the write is completed successfully, replaces the data with the values
+   * in the temporary data
+   * @return True if loaded successfully.
+   */
+  bool load() {
+    try {
+      std::ifstream in(file_path, std::ios::binary);
 
-                if (oldest == rank_it) {
-                    ranking.erase(oldest);
+      if (!in) {
+        return false;
+      }
 
-                    for (auto it = entries.begin(); it != entries.end(); ++it) {
-                        if (&*it == oldest_entry) {
-                            entries.erase(it);
-                            break;
-                        }
-                    }
+      json j;
+      in >> j;
 
-                    return std::nullopt;
-                }
+      if (!j.is_array()) {
+        return false;
+      }
 
-                ranking.erase(oldest);
+      std::list<entry> new_entries;
+      std::multiset<entry*, entry_ptr_comparator> new_ranking;
 
-                for (auto it = entries.begin(); it != entries.end(); ++it) {
-                    if (&*it == oldest_entry) {
-                        entries.erase(it);
-                        break;
-                    }
-                }
-            }
+      std::uint64_t new_next_id = 0;
 
-            return index;
+      std::size_t item_count = 0;
+      for (const auto& item : j) {
+        if (++item_count > max_size) {
+          break;
         }
 
-         /**
-         * @brief Checks if a name exists.
-         * @param name Name to check.
-         * @return True if found.
-         */
-        bool contains(const std::string& name) const {
-        return std::any_of(
-            entries.begin(),
-            entries.end(),
-            [&](const entry& e) {
-                return e.name == name;
-            });
+        if (!item.is_object()) {
+          return false;
         }
 
-        /**
-         * @brief Gets all entries in ranking order.
-         * @return All stored entries.
-         */
-        std::vector<entry> get_all() const {
-            std::vector<entry> result;
-            result.reserve(ranking.size());
+        new_entries.emplace_back(entry{
+          item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
+          item.at(NAMEBOARD_TIMESTAMP_KEY).get<int64_t>(),
+          new_next_id++,
+          {},
+        });
 
-            for (auto e : ranking)
-                result.push_back(*e);
+        entry& e = new_entries.back();
 
-            return result;
-        }
-        
+        auto rank_it = new_ranking.insert(&e);
+        e.position = rank_it;
+      }
 
-        /**
-         * @brief Gets the first ranked entries.
-         * @param amount Number of entries to retrieve.
-         * @return Ranked entries.
-         */
-        std::vector<entry> get_from_first(size_t amount) const {
-            std::vector<entry> result;
-            result.reserve(std::min(amount, ranking.size()));
+      entries = std::move(new_entries);
+      ranking = std::move(new_ranking);
+      next_id = new_next_id;
 
-            auto end = std::next(ranking.begin(), std::min(amount, ranking.size()));
+      return true;
 
-            for (auto it = ranking.begin(); it != end; ++it) {
-                result.push_back(**it);
-            }
-                
-            return result;
-        }
-
-        /**
-         * @brief Gets the last ranked entries.
-         * @param amount Number of entries to retrieve.
-         * @return Ranked entries, last to first.
-         */
-        std::vector<entry> get_from_last(size_t amount) const {
-            std::vector<entry> result;
-            result.reserve(std::min(amount, ranking.size()));
-
-            auto end = std::next(ranking.rbegin(), std::min(amount, ranking.size()));
-
-            for (auto it = ranking.rbegin(); it != end; ++it) {
-                result.push_back(**it);
-            }
-
-            return result;
-        }
-
-        /**
-         * @brief Gets entries in a ranking range.
-         * @param start Starting index.
-         * @param end Ending index (exclusive).
-         * @return Entries in the specified range.
-         */
-        std::vector<entry> get_in_range_from_top(size_t start, size_t end) const {
-            if (start >= ranking.size() || start > end) {
-                return {};
-            }   
-
-            auto first = std::next(ranking.begin(), start);
-            auto last  = std::next(ranking.begin(), std::min(end, ranking.size()));
-
-            std::vector<entry> result;
-            result.reserve(std::distance(first, last));
-
-            for (auto it = first; it != last; ++it) {
-                result.push_back(**it);
-            }
-
-            return result;
-        }
-
-
-        /**
-         * @brief Gets entries in a ranking range counted from the bottom.
-         * @param start Starting index from the bottom.
-         * @param end Ending index from the bottom (exclusive).
-         * @return Entries in the specified range, bottom to top.
-         */
-        std::vector<entry> get_in_range_from_bottom(size_t start, size_t end) const {
-            if (start >= ranking.size() || start > end) {
-                return {};
-            }
-
-            auto first = std::next(ranking.rbegin(), start);
-            auto last  = std::next(ranking.rbegin(), std::min(end, ranking.size()));
-
-            std::vector<entry> result;
-            result.reserve(std::distance(first, last));
-
-            for (auto it = first; it != last; ++it) {
-                result.push_back(**it);
-            }
-
-            return result;
-        }
-
-         /**
-         * @brief Saves the board to disk.
-         * Creates a temporary .tmp file to write all the data
-         * After successfully writing, replaces the original file with the new data
-         * @return True if saved successfully.
-         */
-        bool save() const {
-            const std::string temp_path = std::string(file_path) + ".tmp";
-            try {
-                json j = json::array();
-
-                for (const auto* e : ranking) {
-                    j.push_back({
-                        {NAMEBOARD_NAME_KEY, e->name},
-                        {NAMEBOARD_TIMESTAMP_KEY, e->timestamp}
-                    });
-                }
-
-                {
-                    std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
-
-                    if (!out) {
-                        return false;
-                    }
-
-                    out << j.dump(4);
-
-                    out.flush();
-
-                    if (!out) {
-                        return false;
-                    }
-                }
-
-                std::filesystem::rename(temp_path, file_path);
-
-                return true;
-            } catch (...) {
-                std::error_code ec;
-                std::filesystem::remove(temp_path, ec);
-                return false;
-            }
-        }
-
-    private:
-
-        /**
-         * @brief Loads entries from disk.
-         * Creates temporary new values to write into
-         * Once the write is completed successfully, replaces the data with the values in the temporary data
-         * @return True if loaded successfully.
-         */
-        bool load() {
-            try {
-                std::ifstream in(file_path, std::ios::binary);
-
-                if (!in) {
-                    return false;
-                }
-
-                json j;
-                in >> j;
-
-                if (!j.is_array()) {
-                    return false;
-                }
-
-                std::list<entry> new_entries;
-                std::multiset<entry*, entry_ptr_comparator> new_ranking;
-
-                std::uint64_t new_next_id = 0;
-
-                std::size_t item_count = 0;
-                for (const auto& item : j) {
-                    if (++item_count > max_size) {
-                        break;
-                    }
-
-                    if (!item.is_object()) {
-                        return false;
-                    }
-
-                    new_entries.emplace_back(entry{
-                        item.at(NAMEBOARD_NAME_KEY).get<std::string>(),
-                        item.at(NAMEBOARD_TIMESTAMP_KEY).get<int64_t>(),
-                        new_next_id++,
-                        {},
-                    });
-
-                    entry& e = new_entries.back();
-
-                    auto rank_it = new_ranking.insert(&e);
-                    e.position = rank_it;
-                }
-
-                entries = std::move(new_entries);
-                ranking = std::move(new_ranking);
-                next_id = new_next_id;
-
-                return true;
-
-            } catch (...) {
-                return false;
-            }
-        }
+    } catch (...) {
+      return false;
+    }
+  }
 };

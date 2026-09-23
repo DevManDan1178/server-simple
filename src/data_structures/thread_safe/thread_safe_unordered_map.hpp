@@ -1,220 +1,219 @@
 #pragma once
 
-#include "data_structures/thread_safe/locked_value.hpp"
 #include <mutex>
-#include <unordered_map>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
-template<typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+#include "data_structures/thread_safe/locked_value.hpp"
+
+template <
+  typename K, 
+  typename V, 
+  typename Hash = std::hash<K>, 
+  typename KeyEqual = std::equal_to<K>
+>
 class thread_safe_unordered_map {
-    protected:
-        std::mutex mutex_map;
-        std::unordered_map<K, V, Hash, KeyEqual> map;
+protected:
+  std::mutex mutex_map;
+  std::unordered_map<K, V, Hash, KeyEqual> map;
 
-    public:
-        thread_safe_unordered_map() = default;
+public:
+  thread_safe_unordered_map() = default;
 
-        thread_safe_unordered_map(const thread_safe_unordered_map<K, V, Hash, KeyEqual>&) = delete;
+  thread_safe_unordered_map(const thread_safe_unordered_map<K, V, Hash, KeyEqual>&) = delete;
 
-        virtual ~thread_safe_unordered_map() = default;
+  virtual ~thread_safe_unordered_map() = default;
 
-        /**
-         * @brief Inserts or replaces a key/value pair.
-         */
-        void insert(const K& key, const V& value) {
-            std::scoped_lock lock(mutex_map);
-            map[key] = value;
-        }
+  /**
+   * @brief Inserts or replaces a key/value pair.
+   */
+  void insert(const K& key, const V& value) {
+    std::scoped_lock lock(mutex_map);
+    map[key] = value;
+  }
 
-        /**
-         * @brief Inserts or replaces a key/value pair using move semantics.
-         */
-        void insert(K&& key, V&& value) {
-            std::scoped_lock lock(mutex_map);
-            map[std::move(key)] = std::move(value);
-        }
+  /**
+   * @brief Inserts or replaces a key/value pair using move semantics.
+   */
+  void insert(K&& key, V&& value) {
+    std::scoped_lock lock(mutex_map);
+    map[std::move(key)] = std::move(value);
+  }
 
-        /**
-         * @brief Inserts only if the key does not already exist.
-         *
-         * @return true if inserted, false if key already exists.
-         */
-        bool emplace(const K& key, const V& value) {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Inserts only if the key does not already exist.
+   *
+   * @return true if inserted, false if key already exists.
+   */
+  bool emplace(const K& key, const V& value) {
+    std::scoped_lock lock(mutex_map);
 
-            auto result = map.emplace(key, value);
-            return result.second;
-        }
+    auto result = map.emplace(key, value);
+    return result.second;
+  }
 
-        bool emplace(K&& key, V&& value) {
-            std::scoped_lock lock(mutex_map);
+  bool emplace(K&& key, V&& value) {
+    std::scoped_lock lock(mutex_map);
 
-            auto result = map.emplace(std::move(key), std::move(value));
-            return result.second;
-        }
+    auto result = map.emplace(std::move(key), std::move(value));
+    return result.second;
+  }
 
-        /**
-         * @brief Returns a copy of the value associated with a key.
-         */
-        V get(const K& key) {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Returns a copy of the value associated with a key.
+   */
+  V get(const K& key) {
+    std::scoped_lock lock(mutex_map);
 
-            auto iterator = map.find(key);
+    auto iterator = map.find(key);
 
-            if (iterator == map.end()) {
-                throw std::runtime_error("Key not found - thread_safe_map");
-            }
+    if (iterator == map.end()) {
+      throw std::runtime_error("Key not found - thread_safe_map");
+    }
 
-            return iterator->second;
-        }
+    return iterator->second;
+  }
 
-        locked_value<V> get_locked(const K& key) {
-            std::unique_lock<std::mutex> lock(mutex_map);
+  locked_value<V> get_locked(const K& key) {
+    std::unique_lock<std::mutex> lock(mutex_map);
 
-            auto iterator = map.find(key);
+    auto iterator = map.find(key);
 
-            if (iterator == map.end()) {
-                throw std::runtime_error("Key not found - thread_safe_map");
-            }
+    if (iterator == map.end()) {
+      throw std::runtime_error("Key not found - thread_safe_map");
+    }
 
-            return locked_value<V>(std::move(lock), &iterator->second);
-        }
+    return locked_value<V>(std::move(lock), &iterator->second);
+  }
 
-        /**
-         * @brief Attempts to retrieve a value.
-         *
-         * @return true if key exists, false otherwise.
-         */
-        bool try_get(const K& key, V& value) {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Attempts to retrieve a value.
+   *
+   * @return true if key exists, false otherwise.
+   */
+  bool try_get(const K& key, V& value) {
+    std::scoped_lock lock(mutex_map);
 
-            auto iterator = map.find(key);
+    auto iterator = map.find(key);
 
-            if (iterator == map.end()) {
-                return false;
-            }
+    if (iterator == map.end()) {
+      return false;
+    }
 
-            value = iterator->second;
-            return true;
-        }
+    value = iterator->second;
+    return true;
+  }
 
-        /**
-         * @brief Removes a key.
-         *
-         * @return true if removed, false if key did not exist.
-         */
-        bool erase(const K& key) {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Removes a key.
+   *
+   * @return true if removed, false if key did not exist.
+   */
+  bool erase(const K& key) {
+    std::scoped_lock lock(mutex_map);
 
-            return map.erase(key) > 0;
-        }
+    return map.erase(key) > 0;
+  }
 
-        /**
-         * @brief Checks if a key exists.
-         */
-        bool contains(const K& key) {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Checks if a key exists.
+   */
+  bool contains(const K& key) {
+    std::scoped_lock lock(mutex_map);
 
-            return map.find(key) != map.end();
-        }
+    return map.find(key) != map.end();
+  }
 
-        /**
-         * @brief Returns the number of elements.
-         */
-        size_t size() {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Returns the number of elements.
+   */
+  size_t size() {
+    std::scoped_lock lock(mutex_map);
 
-            return map.size();
-        }
+    return map.size();
+  }
 
-        /**
-         * @brief Checks if the map is empty.
-         */
-        bool empty() {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Checks if the map is empty.
+   */
+  bool empty() {
+    std::scoped_lock lock(mutex_map);
 
-            return map.empty();
-        }
+    return map.empty();
+  }
 
-        /**
-         * @brief Removes all elements.
-         */
-        void clear() {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Removes all elements.
+   */
+  void clear() {
+    std::scoped_lock lock(mutex_map);
 
-            map.clear();
-        }
+    map.clear();
+  }
 
-        /**
-         * @brief Returns a copy of the underlying map.
-         *
-         * Useful for iteration without holding the mutex.
-         */
-        std::unordered_map<K, V, Hash, KeyEqual> snapshot() {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Returns a copy of the underlying map.
+   *
+   * Useful for iteration without holding the mutex.
+   */
+  std::unordered_map<K, V, Hash, KeyEqual> snapshot() {
+    std::scoped_lock lock(mutex_map);
 
-            return map;
-        }
+    return map;
+  }
 
-        /**
-         * @brief Returns a value and removes the key.
-         */
-        V extract(const K& key) {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Returns a value and removes the key.
+   */
+  V extract(const K& key) {
+    std::scoped_lock lock(mutex_map);
 
-            auto iterator = map.find(key);
+    auto iterator = map.find(key);
 
-            if (iterator == map.end()) {
-                throw std::runtime_error("Key not found");
-            }
+    if (iterator == map.end()) {
+      throw std::runtime_error("Key not found");
+    }
 
-            V value = std::move(iterator->second);
-            map.erase(iterator);
+    V value = std::move(iterator->second);
+    map.erase(iterator);
 
-            return value;
-        }
+    return value;
+  }
 
-        /**
-         * @brief Invokes the provided function for every key-value pair in the map.
-         * The map is locked for the entire duration of this call, including while the callback is being executed. The callback receives the key and value as references.
-         * @warning Do not access the map or call any function that attempts to acquire `mutex_map` from within the callback, as this will result in a deadlock.
-         * @param function Function to invoke for each key-value pair.
-         */
-        template<typename Function>
-        void for_each(Function&& function) {
-            std::scoped_lock lock(mutex_map);
+  /**
+   * @brief Invokes the provided function for every key-value pair in the map.
+   * The map is locked for the entire duration of this call, including while the
+   * callback is being executed. The callback receives the key and value as
+   * references.
+   * @warning Do not access the map or call any function that attempts to
+   * acquire `mutex_map` from within the callback, as this will result in a
+   * deadlock.
+   * @param function Function to invoke for each key-value pair.
+   */
+  template <typename Function>
+  void for_each(Function&& function) {
+    std::scoped_lock lock(mutex_map);
 
-            for (auto& [key, value] : map) {
-                function(key, value);
-            }
-        }
+    for (auto& [key, value] : map) {
+      function(key, value);
+    }
+  }
 
-        template<typename... Args>
-        bool try_emplace(const K& key, Args&&... args) {
-            std::scoped_lock lock(mutex_map);
+  template <typename... Args>
+  bool try_emplace(const K& key, Args&&... args) {
+    std::scoped_lock lock(mutex_map);
 
-            return map.try_emplace(
-                key,
-                std::forward<Args>(args)...
-            ).second;
-        }
+    return map.try_emplace(key, std::forward<Args>(args)...).second;
+  }
 
-        template<typename... Args>
-        std::pair<locked_value<V>, bool> try_emplace_locked(const K& key, Args&&... args) {
-            std::unique_lock<std::mutex> lock(mutex_map);
+  template <typename... Args>
+  std::pair<locked_value<V>, bool> try_emplace_locked(const K& key, Args&&... args) {
+    std::unique_lock<std::mutex> lock(mutex_map);
 
-            auto [iterator, inserted] = map.try_emplace(
-                key,
-                std::forward<Args>(args)...
-            );
+    auto [iterator, inserted] =
+        map.try_emplace(key, std::forward<Args>(args)...);
 
-            return {
-                locked_value<V>(
-                    std::move(lock),
-                    &iterator->second
-                ),
-                inserted
-            };
-        }
+    return {locked_value<V>(std::move(lock), &iterator->second), inserted};
+  }
 };

@@ -1,133 +1,136 @@
 #pragma once
-#include "network/servers/server_base.hpp"
-#include <unordered_set>
-#include <string_view>
-#include <string>
 #include <algorithm>
+#include <string>
+#include <string_view>
 #include <thread>
+#include <unordered_set>
 
-constexpr const float DEFAULT_FIXED_DELTA_TIME = 1.0f; // /60.0f;
+#include "network/servers/server_base.hpp"
+
+constexpr const float DEFAULT_FIXED_DELTA_TIME = 1.0f;  // /60.0f;
 constexpr const size_t DEFAULT_MAX_INCOMING_PACKETS = 128 * 1024;
 constexpr const size_t DEFAULT_MAX_INCOMING_BYTES = 64 * 1024 * 1024;
 
-// Server that does not close when the user joins
+// Server for persistent connections
 class persistent_server_base : public server_base {
-    protected:
-        std::unordered_set<std::shared_ptr<websocket_session>> active_sessions;
-        std::thread update_loop_thread;
-        const float fixed_delta_time;
-        thread_safe_queue<incoming_packet> incoming_packets_queue;
+protected:
+  std::unordered_set<std::shared_ptr<websocket_session>> active_sessions;
+  std::thread update_loop_thread;
+  const float fixed_delta_time;
+  thread_safe_queue<incoming_packet> incoming_packets_queue;
 
-    public:
-        persistent_server_base(
-            unsigned short port, 
-            float _fixed_delta_time = DEFAULT_FIXED_DELTA_TIME, 
-            size_t max_incoming_packets = DEFAULT_MAX_INCOMING_PACKETS,
-            size_t max_incoming_bytes = DEFAULT_MAX_INCOMING_BYTES
-        )   : 
-            server_base(port), 
-            fixed_delta_time(std::max(_fixed_delta_time, 0.0f)), 
-            incoming_packets_queue(max_incoming_packets, max_incoming_bytes) {
-                
-            if (_fixed_delta_time < 0) {
-                std::cerr << "Attempt to set server delta time to negative number - defaulted to zero (no update)\n";
-            }
+public:
+  persistent_server_base(
+      unsigned short port, float _fixed_delta_time = DEFAULT_FIXED_DELTA_TIME,
+      size_t max_incoming_packets = DEFAULT_MAX_INCOMING_PACKETS,
+      size_t max_incoming_bytes = DEFAULT_MAX_INCOMING_BYTES)
+      : server_base(port),
+        fixed_delta_time(std::max(_fixed_delta_time, 0.0f)),
+        incoming_packets_queue(max_incoming_packets, max_incoming_bytes) {
+    if (_fixed_delta_time < 0) {
+      std::cerr << std::format("Attempt to set server delta time to negative number {0} - defaulted to zero (no update)\n", _fixed_delta_time);
+    }
+  }
+
+  virtual void launch() {
+    server_base::launch();
+
+    if (fixed_delta_time <= 0) {
+      return;
+    }
+
+    update_loop_thread = std::thread([this]() {
+      const auto frame_duration = std::chrono::duration<float>(fixed_delta_time);
+
+      while (is_running()) {
+        auto frame_start = std::chrono::steady_clock::now();
+
+        update();
+
+        // Maintain fixed delta time sleep
+        auto frame_end = std::chrono::steady_clock::now();
+        auto elapsed = frame_end - frame_start;
+
+        if (elapsed < frame_duration) {
+          std::this_thread::sleep_for(frame_duration - elapsed);
+        }
+      }
+    });
+  }
+
+  virtual ~persistent_server_base() { 
+    try_stop(); 
+  }
+
+protected:
+  virtual void stop() {
+    server_base::stop();
+    incoming_packets_queue.stop();
+    if (update_loop_thread.joinable()) {
+      update_loop_thread.join();
+    }
+  }
+
+  virtual void on_client_connected(boost::asio::ip::tcp::socket&) {
+    log_debug() << "[SERVER] Client connected";
+  }
+
+  virtual void on_client_disconnected(boost::asio::ip::tcp::socket&) {
+    log_debug() << "[SERVER] Client disconnected";
+  }
+
+  void setup_client_connection(boost::asio::ip::tcp::socket& socket) {
+    std::shared_ptr<websocket_session> session = std::make_shared<websocket_session>(
+      std::move(socket),
+      incoming_packets_queue
+    );
+
+    active_sessions.insert(session);
+    session->start();
+    on_client_connected(socket);
+  }
+
+  void broadcast(const std::string& message) {
+    for (auto i_ptr = active_sessions.begin();
+        i_ptr != active_sessions.end();) {
+      if (auto session = *i_ptr; session) {
+        session->send(message);
+        ++i_ptr;
+      } else {
+        i_ptr = active_sessions.erase(i_ptr);
+      }
+    }
+  }
+
+  virtual void update() {}
+
+  void send(
+    std::shared_ptr<boost::asio::ip::tcp::socket>,
+    std::shared_ptr<boost::beast::flat_buffer>,
+    const boost::beast::http::response<boost::beast::http::string_body>&,
+    std::function<void()>
+  ) {}
+
+  virtual void start_accept_async() override {
+    auto socket = std::make_shared<boost::asio::ip::tcp::socket>(asio_context);
+
+    asio_acceptor.async_accept(
+      *socket, 
+      [this, socket](const boost::system::error_code& ec) {
+        if (!ec) {
+          // Directly set up connection without extra handle_client function
+          setup_client_connection(*socket);
         }
 
-        virtual void launch() {
-            server_base::launch(); 
-
-            if (fixed_delta_time <= 0) {
-                return;
-            }
-            
-            update_loop_thread = std::thread([this]() {
-                const auto frame_duration = std::chrono::duration<float>(fixed_delta_time);
-
-                while (is_running()) {
-                    auto frame_start = std::chrono::steady_clock::now();
-
-                    update();
-
-                    // Maintain fixed delta time sleep
-                    auto frame_end = std::chrono::steady_clock::now();
-                    auto elapsed = frame_end - frame_start;
-
-                    if (elapsed < frame_duration) {
-                        std::this_thread::sleep_for(frame_duration - elapsed);
-                    }
-                }
-            });
+        if (is_running()) {
+          start_accept_async();
         }
+      }
+    );
+  }
 
-        virtual ~persistent_server_base() {
-            try_stop();
-        }
-
-    protected:
-        virtual void stop() {
-            server_base::stop();
-            incoming_packets_queue.stop();
-            if (update_loop_thread.joinable()) {
-                update_loop_thread.join();
-            }
-        }
-
-        virtual void on_client_connected(boost::asio::ip::tcp::socket&) {
-            log_debug() << "[SERVER] Client connected";
-        }
-        
-        virtual void on_client_disconnected(boost::asio::ip::tcp::socket&) {
-            log_debug() << "[SERVER] Client disconnected";
-        }
-        
-        void setup_client_connection(boost::asio::ip::tcp::socket& socket) {
-            std::shared_ptr<websocket_session> session = std::make_shared<websocket_session>(std::move(socket), incoming_packets_queue);
-            active_sessions.insert(session);
-            session->start();
-            on_client_connected(socket);
-        }
-        
-        void broadcast(const std::string& message) {
-            for (auto i_ptr = active_sessions.begin(); i_ptr != active_sessions.end(); ) {
-                if (auto session = *i_ptr; session) {
-                    session->send(message);
-                    ++i_ptr;
-                } else {
-                    i_ptr = active_sessions.erase(i_ptr);
-                }
-            }
-        }
-        
-        
-        virtual void update() {}
-
-        void send(std::shared_ptr<boost::asio::ip::tcp::socket>, 
-            std::shared_ptr<boost::beast::flat_buffer>,
-            const boost::beast::http::response<boost::beast::http::string_body>&,
-            std::function<void()>) { 
-        }
-
-        virtual void start_accept_async() override {
-            auto socket = std::make_shared<boost::asio::ip::tcp::socket>(asio_context);
-
-            asio_acceptor.async_accept(
-                *socket, 
-                [this, socket](const boost::system::error_code& ec) {
-                    if (!ec) {
-                        // Directly set up connection without extra handle_client function
-                        setup_client_connection(*socket);
-                    }
-                    
-                    if (is_running()) {
-                        start_accept_async();
-                    }
-                }
-            );
-        }
-
-    private:
-        void remove_session(const std::shared_ptr<websocket_session>& session) {
-            active_sessions.erase(session);
-        }
+private:
+  void remove_session(const std::shared_ptr<websocket_session>& session) {
+    active_sessions.erase(session);
+  }
 };
